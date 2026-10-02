@@ -1,5 +1,5 @@
 import type { Case, Hearing, Lawyer, Prisma, ReminderChannel, ReminderType } from '@prisma/client';
-import { istDateString, istDateTimeToUtc } from '../lib/time.js';
+import { formatIst, istDateString, istDateTimeToUtc } from '../lib/time.js';
 
 type Db = Prisma.TransactionClient;
 
@@ -88,6 +88,28 @@ export function planHearingReminders(
 
 const sameReminder = (a: PlannedReminder, b: PlannedReminder) =>
   a.type === b.type && a.channel === b.channel && a.sendAt.getTime() === b.sendAt.getTime();
+
+// Why a hearing reminder no longer fits its hearing as the hearing stands now, or null if
+// it still does: the hearing has an outcome or was cancelled, the case is closed, the
+// reminder was turned off, or the hearing moved. Used by the sender just before sending
+// and by the dashboard's retry button.
+export function reasonReminderNoLongerApplies(
+  reminder: PlannedReminder,
+  hearing: Pick<Hearing, 'scheduledAt' | 'status'> & { case: CaseOverrides; lawyer: LawyerPrefs },
+): string | null {
+  if (hearing.status === 'COMPLETED') return 'The outcome of the hearing has been logged.';
+  if (hearing.status === 'CANCELLED') return 'The hearing was cancelled.';
+  if (hearing.case.status !== 'ACTIVE') return 'The case is closed.';
+
+  const planned = planHearingReminders(hearing, hearing.case, hearing.lawyer).find(
+    (p) => p.type === reminder.type && p.channel === reminder.channel,
+  );
+  if (!planned) return 'This reminder was turned off in Settings or for this case.';
+  if (planned.sendAt.getTime() !== reminder.sendAt.getTime()) {
+    return `The hearing was moved to ${formatIst(hearing.scheduledAt, 'd MMM yyyy, h:mm a')} IST.`;
+  }
+  return null;
+}
 
 // Brings one hearing's reminders in line with its current date, status and settings.
 // - Unsent (PENDING) reminders that no longer fit are CANCELLED. One that still fits is

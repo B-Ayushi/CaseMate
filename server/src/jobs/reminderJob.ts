@@ -1,7 +1,7 @@
 import { Prisma, type PrismaClient, type Reminder } from '@prisma/client';
 import type { Mailer } from '../lib/mailer.js';
 import { sendSms, type SmsProvider } from '../lib/sms.js';
-import { dateOnly, formatIst, istDateString, istDateTimeToUtc, istDayRange } from '../lib/time.js';
+import { dateOnly, istDateString, istDateTimeToUtc, istDayRange } from '../lib/time.js';
 import {
   dailySummaryEmail,
   dayBeforeEmail,
@@ -10,7 +10,7 @@ import {
   twoHourSms,
   type HearingInfo,
 } from '../services/emails/reminderMessages.js';
-import { planHearingReminders } from '../services/reminderPlanner.js';
+import { reasonReminderNoLongerApplies } from '../services/reminderPlanner.js';
 
 // A failed send is retried 3 times, 5, 10 and then 15 minutes after the previous try.
 // If the third retry also fails the reminder is marked FAILED (4 attempts in all).
@@ -155,17 +155,8 @@ function reasonNotToSend(
   hearing: HearingForReminder,
   now: Date,
 ): string | null {
-  if (hearing.status === 'COMPLETED') return 'The outcome of the hearing has been logged.';
-  if (hearing.status === 'CANCELLED') return 'The hearing was cancelled.';
-  if (hearing.case.status !== 'ACTIVE') return 'The case is closed.';
-
-  const planned = planHearingReminders(hearing, hearing.case, hearing.lawyer).find(
-    (p) => p.type === reminder.type && p.channel === reminder.channel,
-  );
-  if (!planned) return 'This reminder was turned off in Settings or for this case.';
-  if (planned.sendAt.getTime() !== reminder.sendAt.getTime()) {
-    return `The hearing was moved to ${formatIst(hearing.scheduledAt, 'd MMM yyyy, h:mm a')} IST.`;
-  }
+  const reason = reasonReminderNoLongerApplies(reminder, hearing);
+  if (reason) return reason;
   // A hearing reminder that would arrive after the hearing has started is no use.
   if (reminder.type !== 'MISSING_OUTCOME' && hearing.scheduledAt <= now) {
     return 'The hearing had already started when this was due.';

@@ -281,11 +281,13 @@ export function PageHeader({
 }
 
 export function Card({
+  id,
   title,
   actions,
   children,
   className,
 }: {
+  id?: string;
   title?: ReactNode;
   actions?: ReactNode;
   children: ReactNode;
@@ -294,6 +296,7 @@ export function Card({
   const headingId = useId();
   return (
     <section
+      id={id}
       aria-labelledby={title ? headingId : undefined}
       className={cx('rounded-xl border border-slate-200 bg-white p-5 shadow-sm', className)}
     >

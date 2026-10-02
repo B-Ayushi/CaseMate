@@ -34,3 +34,39 @@ export const istToUtc = (day: string, time: string) => fromZonedTime(`${day}T${t
 
 export const addDaysToIsoDay = (day: string, days: number) =>
   formatInTimeZone(addDays(new Date(`${day}T00:00:00Z`), days), 'UTC', 'yyyy-MM-dd');
+
+// Calendar days ("yyyy-MM-dd") and months ("yyyy-MM") are IST days already, so they are
+// handled as plain dates with no time zone conversion.
+const isoDayDate = (day: string) => new Date(`${day}T00:00:00Z`);
+
+// Format an IST calendar day, e.g. formatIsoDay("2026-10-14", "EEE d MMM") = "Wed 14 Oct".
+export const formatIsoDay = (day: string, pattern: string) =>
+  formatInTimeZone(isoDayDate(day), 'UTC', pattern);
+
+// "October 2026"
+export const formatMonth = (month: string) => formatIsoDay(`${month}-01`, 'MMMM yyyy');
+
+// The current IST month, "yyyy-MM".
+export const thisMonthIst = () => formatIst(new Date(), 'yyyy-MM');
+
+export function addMonths(month: string, months: number): string {
+  const [year, monthNumber] = month.split('-').map(Number) as [number, number];
+  const date = new Date(Date.UTC(year, monthNumber - 1 + months, 1));
+  return date.toISOString().slice(0, 7);
+}
+
+// Every day of a month, in order.
+export function daysOfMonth(month: string): string[] {
+  const [year, monthNumber] = month.split('-').map(Number) as [number, number];
+  const count = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+  return Array.from({ length: count }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`);
+}
+
+// 0 for Monday through 6 for Sunday.
+export const weekdayMondayFirst = (day: string) => (isoDayDate(day).getUTCDay() + 6) % 7;
+
+// Matches "yyyy-MM" and "yyyy-MM-dd" values read from the address bar.
+export const isMonth = (value: string | null): value is string =>
+  !!value && /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
+export const isIsoDay = (value: string | null): value is string =>
+  !!value && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(value);

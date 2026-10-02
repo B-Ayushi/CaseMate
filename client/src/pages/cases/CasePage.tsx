@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ApiError, errorMessage } from '../../api/http';
 import { Alert, Badge, Button, ButtonLink, Card, Spinner, TextLink } from '../../components/ui';
 import {
@@ -185,6 +185,22 @@ export function CasePage() {
   const navigate = useNavigate();
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const now = useNow();
+  const { hash } = useLocation();
+  const loaded = legalCase.isSuccess;
+
+  // Links such as "Add next date" on the dashboard point at one hearing's outcome card
+  // (#outcome-<hearing id>): bring it into view and put the cursor in its first field.
+  // This waits a tick so it runs after the app shell moves focus to the new page.
+  useEffect(() => {
+    if (!loaded || !hash.startsWith('#outcome-')) return;
+    const timer = window.setTimeout(() => {
+      const card = document.getElementById(hash.slice(1));
+      if (!card) return;
+      card.scrollIntoView({ block: 'start' });
+      card.querySelector<HTMLElement>('select, input, textarea')?.focus({ preventScroll: true });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loaded, hash]);
 
   if (legalCase.isPending) return <Spinner label="Loading case…" />;
   if (legalCase.isError) {
@@ -247,6 +263,7 @@ export function CasePage() {
       {awaitingOutcome.map((h) => (
         <Card
           key={h.id}
+          id={`outcome-${h.id}`}
           title={`Log the outcome of ${formatDay(h.scheduledAt)}, ${formatTime(h.scheduledAt)}`}
           className="border-amber-200 ring-1 ring-amber-100"
         >

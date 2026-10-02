@@ -31,6 +31,18 @@ export function istDayRange(isoDay: string): { start: Date; end: Date } {
   return { start, end: addDays(start, 1) };
 }
 
+// The "yyyy-MM-dd" day `days` after (or before) an IST calendar day.
+export function addDaysToIsoDay(isoDay: string, days: number): string {
+  return addDays(dateOnly(isoDay), days).toISOString().slice(0, 10);
+}
+
+// The first and last "yyyy-MM-dd" days of a "yyyy-MM" month.
+export function monthDays(month: string): { first: string; last: string } {
+  const [year, monthIndex] = month.split('-').map(Number) as [number, number];
+  const lastDay = new Date(Date.UTC(year, monthIndex, 0)).getUTCDate();
+  return { first: `${month}-01`, last: `${month}-${String(lastDay).padStart(2, '0')}` };
+}
+
 export function formatIst(instant: Date, pattern: string): string {
   return formatInTimeZone(instant, APP_TIMEZONE, pattern);
 }

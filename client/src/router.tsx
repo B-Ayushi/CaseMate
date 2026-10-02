@@ -1,10 +1,12 @@
-import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { createBrowserRouter } from 'react-router-dom';
 import { AppShell } from './components/AppShell';
 import { PublicOnly, RequireAuth } from './components/RouteGuards';
 import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage';
 import { LoginPage } from './pages/auth/LoginPage';
 import { ResetPasswordPage } from './pages/auth/ResetPasswordPage';
 import { SignupPage } from './pages/auth/SignupPage';
+import { CalendarPage } from './pages/CalendarPage';
+import { DashboardPage } from './pages/DashboardPage';
 import { EditCasePage, NewCasePage } from './pages/cases/CaseFormPage';
 import { CasePage } from './pages/cases/CasePage';
 import { CasesPage } from './pages/cases/CasesPage';
@@ -30,7 +32,8 @@ export const router = createBrowserRouter([
       {
         element: <AppShell />,
         children: [
-          { index: true, element: <Navigate to="/cases" replace /> },
+          { index: true, element: <DashboardPage /> },
+          { path: 'calendar', element: <CalendarPage /> },
           { path: 'cases', element: <CasesPage /> },
           { path: 'cases/new', element: <NewCasePage /> },
           { path: 'cases/:id', element: <CasePage /> },

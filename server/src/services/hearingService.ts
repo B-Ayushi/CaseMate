@@ -1,6 +1,13 @@
 import type { HearingOutcome, Prisma, PrismaClient } from '@prisma/client';
 import { HttpError } from '../lib/httpError.js';
-import { dateOnly, istDateString, istDateTimeToUtc, istDayRange } from '../lib/time.js';
+import {
+  dateOnly,
+  formatIst,
+  istDateString,
+  istDateTimeToUtc,
+  istDayRange,
+  monthDays,
+} from '../lib/time.js';
 import type { HearingSlot, OutcomeBody } from '../validators/caseValidators.js';
 import { missingOutcomeNudgeAt, syncHearingReminders } from './reminderPlanner.js';
 
@@ -190,7 +197,32 @@ export function logOutcome(prisma: PrismaClient, lawyerId: string, id: string, b
   });
 }
 
-// Hearings in an IST date range, for the calendar and dashboard.
+// Hearings shown on the dashboard and calendar: ones that took place (outcome logged),
+// and scheduled ones of open cases. Cancelled hearings, and scheduled hearings left on a
+// case that has since been closed, are not shown.
+export const visibleHearingWhere = {
+  OR: [{ status: 'COMPLETED' }, { status: 'SCHEDULED', case: { status: 'ACTIVE' } }],
+} satisfies Prisma.HearingWhereInput;
+
+export const hearingSummarySelect = {
+  id: true,
+  scheduledAt: true,
+  purpose: true,
+  status: true,
+  outcome: true,
+  case: {
+    select: {
+      id: true,
+      title: true,
+      caseNumber: true,
+      courtName: true,
+      courtroom: true,
+      client: { select: { id: true, name: true } },
+    },
+  },
+} satisfies Prisma.HearingSelect;
+
+// Hearings in an IST date range, in time order.
 export async function listHearings(
   prisma: PrismaClient,
   lawyerId: string,
@@ -199,28 +231,25 @@ export async function listHearings(
   return prisma.hearing.findMany({
     where: {
       lawyerId,
-      status: { not: 'CANCELLED' },
+      ...visibleHearingWhere,
       scheduledAt: { gte: istDayRange(range.from).start, lt: istDayRange(range.to).end },
     },
     orderBy: { scheduledAt: 'asc' },
-    select: {
-      id: true,
-      scheduledAt: true,
-      purpose: true,
-      status: true,
-      outcome: true,
-      case: {
-        select: {
-          id: true,
-          title: true,
-          caseNumber: true,
-          courtName: true,
-          courtroom: true,
-          client: { select: { id: true, name: true } },
-        },
-      },
-    },
+    select: hearingSummarySelect,
   });
+}
+
+// One calendar month ("yyyy-MM") of hearings. The month starts at midnight IST on its
+// first day and ends at midnight IST after its last day. Each hearing carries its IST
+// date and time as well as the UTC instant.
+export async function calendarMonth(prisma: PrismaClient, lawyerId: string, month: string) {
+  const { first, last } = monthDays(month);
+  const hearings = await listHearings(prisma, lawyerId, { from: first, to: last });
+  return hearings.map((h) => ({
+    ...h,
+    date: istDateString(h.scheduledAt),
+    time: formatIst(h.scheduledAt, 'HH:mm'),
+  }));
 }
 
 // Scheduled hearings of active cases that are past their alert time with no outcome.

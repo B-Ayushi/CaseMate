@@ -26,7 +26,7 @@ test('sign up, log out, fail and succeed at logging in', async ({ page }) => {
   await page.getByLabel('Password').fill(PASSWORD);
   await page.getByRole('button', { name: 'Create account' }).click();
 
-  await expect(page.getByRole('heading', { name: 'Cases', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /, Priya Sharma$/ })).toBeVisible();
   await expect(page.getByText('Priya Sharma').first()).toBeVisible();
 
   await page.getByRole('button', { name: 'Log out' }).click();
@@ -39,7 +39,7 @@ test('sign up, log out, fail and succeed at logging in', async ({ page }) => {
 
   await page.getByLabel('Password').fill(PASSWORD);
   await page.getByRole('button', { name: 'Log in' }).click();
-  await expect(page.getByRole('heading', { name: 'Cases', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /, Priya Sharma$/ })).toBeVisible();
 });
 
 test('a duplicate email is reported on the signup form', async ({ page }) => {

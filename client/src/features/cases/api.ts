@@ -159,6 +159,7 @@ function useInvalidateAll() {
       queryClient.invalidateQueries({ queryKey: ['clients'] }),
       queryClient.invalidateQueries({ queryKey: ['hearings'] }),
       queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
+      queryClient.invalidateQueries({ queryKey: ['calendar'] }),
       queryClient.invalidateQueries({ queryKey: ['billing'] }),
     ]);
 }

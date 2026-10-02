@@ -8,6 +8,7 @@ import { requireAuth } from './middleware/requireAuth.js';
 import { authRoutes } from './routes/authRoutes.js';
 import { caseRoutes, hearingRoutes } from './routes/caseRoutes.js';
 import { clientRoutes } from './routes/clientRoutes.js';
+import { calendarRoutes, dashboardRoutes, reminderRoutes } from './routes/dashboardRoutes.js';
 import { healthRoutes } from './routes/healthRoutes.js';
 
 export function createApp(deps: AppDeps): Express {
@@ -28,6 +29,9 @@ export function createApp(deps: AppDeps): Express {
   app.use('/api/clients', auth, clientRoutes(deps));
   app.use('/api/cases', auth, caseRoutes(deps));
   app.use('/api/hearings', auth, hearingRoutes(deps));
+  app.use('/api/dashboard', auth, dashboardRoutes(deps));
+  app.use('/api/calendar', auth, calendarRoutes(deps));
+  app.use('/api/reminders', auth, reminderRoutes(deps));
 
   app.use('/api', notFoundHandler);
   app.use(errorHandler(config));
