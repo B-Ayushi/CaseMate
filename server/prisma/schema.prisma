@@ -1,4 +1,10 @@
-// CaseMate database schema. Models are added feature by feature.
+// CaseMate database schema.
+//
+// Conventions:
+// - Every DateTime is stored in UTC. Dates the lawyer thinks of as calendar days
+//   (workDate, issueDate, dueDate, summaryDate) are stored as DATE and mean the IST day.
+// - Every amount is an integer number of paise.
+// - Every row is owned by exactly one lawyer through lawyerId, and every query filters by it.
 
 generator client {
   provider = "prisma-client-js"
@@ -7,4 +13,290 @@ generator client {
 datasource db {
   provider = "mysql"
   url      = env("DATABASE_URL")
+}
+
+enum PreferredContact {
+  PHONE
+  WHATSAPP
+  EMAIL
+}
+
+enum CaseStatus {
+  ACTIVE
+  CLOSED
+}
+
+enum HearingStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+enum HearingOutcome {
+  ADJOURNED
+  HEARD
+  ORDER_RESERVED
+  DISPOSED
+  OTHER
+}
+
+enum ReminderType {
+  DAY_BEFORE
+  TWO_HOUR
+  DAILY_SUMMARY
+  MISSING_OUTCOME
+}
+
+enum ReminderChannel {
+  EMAIL
+  SMS
+}
+
+enum ReminderStatus {
+  PENDING
+  SENDING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+}
+
+// Deleting an account: the Restrict rules that protect billing history (on Case.client,
+// TimeEntry.case and Invoice.client) also block a plain DELETE of the lawyer, because MySQL
+// may cascade in any order. Delete in one transaction, children first: time entries,
+// invoices, cases (removes hearings and reminders), clients (removes notes), then the lawyer.
+model Lawyer {
+  id                     String    @id @default(cuid())
+  name                   String
+  email                  String    @unique
+  phone                  String    @db.VarChar(20)
+  barCouncilNumber       String    @db.VarChar(50)
+  passwordHash           String
+  passwordResetTokenHash String?
+  passwordResetExpiresAt DateTime?
+  defaultHourlyRatePaise Int       @default(0)
+
+  // Reminder preferences (defaults for every case; a case can override some of them)
+  emailEnabled               Boolean @default(true)
+  smsEnabled                 Boolean @default(true)
+  dayBeforeEnabled           Boolean @default(true)
+  twoHourEnabled             Boolean @default(true)
+  dailySummaryEnabled        Boolean @default(true)
+  dailySummaryTime           String  @default("07:00") @db.Char(5) // HH:mm in IST
+  missingOutcomeNudgeEnabled Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clients     Client[]
+  clientNotes ClientNote[]
+  cases       Case[]
+  hearings    Hearing[]
+  reminders   Reminder[]
+  timeEntries TimeEntry[]
+  invoices    Invoice[]
+
+  @@map("lawyers")
+}
+
+model Client {
+  id               String           @id @default(cuid())
+  lawyerId         String
+  name             String
+  phone            String           @db.VarChar(20)
+  email            String?
+  address          String?          @db.Text
+  preferredContact PreferredContact @default(PHONE)
+  languages        String? // free text, for example "Hindi, Marathi"
+  hourlyRatePaise  Int? // overrides Lawyer.defaultHourlyRatePaise when set
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lawyer   Lawyer       @relation(fields: [lawyerId], references: [id], onDelete: Cascade)
+  notes    ClientNote[]
+  cases    Case[]
+  invoices Invoice[]
+
+  @@index([lawyerId, name])
+  @@map("clients")
+}
+
+model ClientNote {
+  id       String   @id @default(cuid())
+  lawyerId String
+  clientId String
+  notedAt  DateTime @default(now())
+  text     String   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lawyer Lawyer @relation(fields: [lawyerId], references: [id], onDelete: Cascade)
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([lawyerId])
+  @@index([clientId, notedAt])
+  @@map("client_notes")
+}
+
+model Case {
+  id              String     @id @default(cuid())
+  lawyerId        String
+  clientId        String
+  title           String
+  caseNumber      String     @db.VarChar(100)
+  caseType        String?
+  courtName       String
+  courtroom       String?    @db.VarChar(100)
+  judge           String?
+  opposingParty   String?
+  opposingCounsel String?
+  notes           String?    @db.Text
+  status          CaseStatus @default(ACTIVE)
+
+  // Per-case reminder overrides: null means "use the lawyer's default"
+  emailReminderOverride     Boolean?
+  smsReminderOverride       Boolean?
+  dayBeforeReminderOverride Boolean?
+  twoHourReminderOverride   Boolean?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lawyer      Lawyer      @relation(fields: [lawyerId], references: [id], onDelete: Cascade)
+  // A client with cases cannot be deleted; close or reassign the cases first.
+  client      Client      @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  hearings    Hearing[]
+  timeEntries TimeEntry[]
+
+  @@unique([lawyerId, caseNumber])
+  @@index([lawyerId, status])
+  @@index([clientId])
+  @@map("cases")
+}
+
+model Hearing {
+  id               String          @id @default(cuid())
+  lawyerId         String
+  caseId           String
+  scheduledAt      DateTime // UTC
+  purpose          String?
+  notes            String?         @db.Text
+  status           HearingStatus   @default(SCHEDULED)
+  outcome          HearingOutcome?
+  outcomeNotes     String?         @db.Text
+  timeSpentMinutes Int?
+  loggedAt         DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lawyer      Lawyer      @relation(fields: [lawyerId], references: [id], onDelete: Cascade)
+  case        Case        @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  reminders   Reminder[]
+  timeEntries TimeEntry[]
+
+  @@index([lawyerId, scheduledAt])
+  @@index([caseId, scheduledAt])
+  @@index([status, scheduledAt])
+  @@map("hearings")
+}
+
+// One row is one message to send. Duplicates are impossible at the database level:
+// - hearing reminders are unique per (hearing, type, channel, sendAt). If a hearing moves
+//   and later moves back, the cancelled row is reactivated instead of inserting a copy,
+//   and a SENT row is never sent again.
+// - daily summaries have no hearing, so they carry summaryDate (the IST day) and are unique
+//   per (lawyer, type, channel, summaryDate). A CHECK constraint in the migration ensures
+//   only DAILY_SUMMARY rows have a summaryDate.
+model Reminder {
+  id            String          @id @default(cuid())
+  lawyerId      String
+  hearingId     String? // null only for DAILY_SUMMARY
+  summaryDate   DateTime?       @db.Date // set only for DAILY_SUMMARY
+  type          ReminderType
+  channel       ReminderChannel
+  sendAt        DateTime // UTC
+  status        ReminderStatus  @default(PENDING)
+  attempts      Int             @default(0)
+  nextAttemptAt DateTime?
+  lastError     String?         @db.Text
+  sentAt        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lawyer  Lawyer   @relation(fields: [lawyerId], references: [id], onDelete: Cascade)
+  hearing Hearing? @relation(fields: [hearingId], references: [id], onDelete: Cascade)
+
+  @@unique([hearingId, type, channel, sendAt])
+  @@unique([lawyerId, type, channel, summaryDate])
+  @@index([status, sendAt])
+  @@index([status, nextAttemptAt])
+  @@index([lawyerId, status])
+  @@map("reminders")
+}
+
+model TimeEntry {
+  id          String   @id @default(cuid())
+  lawyerId    String
+  caseId      String
+  hearingId   String?
+  workDate    DateTime @db.Date // IST calendar day
+  minutes     Int
+  description String   @db.Text
+  ratePaise   Int // hourly rate used, copied at entry time
+  amountPaise Int // calculated by the server from minutes and ratePaise
+  invoiceId   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lawyer  Lawyer   @relation(fields: [lawyerId], references: [id], onDelete: Cascade)
+  // A case with time entries cannot be deleted, so billing history is never lost.
+  case    Case     @relation(fields: [caseId], references: [id], onDelete: Restrict)
+  hearing Hearing? @relation(fields: [hearingId], references: [id], onDelete: SetNull)
+  // Deleting a draft invoice returns its entries to the unbilled list.
+  invoice Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  @@index([lawyerId, workDate])
+  @@index([lawyerId, invoiceId])
+  @@index([caseId, workDate])
+  @@index([invoiceId])
+  @@map("time_entries")
+}
+
+// Overdue is not stored: an invoice is overdue when status is SENT and dueDate is past.
+model Invoice {
+  id         String        @id @default(cuid())
+  lawyerId   String
+  clientId   String
+  number     String        @db.VarChar(30) // for example INV-001
+  issueDate  DateTime      @db.Date // IST calendar day
+  dueDate    DateTime      @db.Date // IST calendar day
+  totalPaise Int
+  status     InvoiceStatus @default(DRAFT)
+  sentAt     DateTime?
+  paidAt     DateTime?
+  notes      String?       @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lawyer      Lawyer      @relation(fields: [lawyerId], references: [id], onDelete: Cascade)
+  // A client with invoices cannot be deleted, so billing history is never lost.
+  client      Client      @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  timeEntries TimeEntry[]
+
+  @@unique([lawyerId, number])
+  @@index([lawyerId, status, dueDate])
+  @@index([lawyerId, issueDate])
+  @@index([clientId])
+  @@map("invoices")
 }

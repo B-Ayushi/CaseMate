@@ -2,11 +2,11 @@ import { PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
+import { prisma } from '../src/lib/prisma.js';
 
 const clientUrl = 'http://localhost:5173';
 
 describe('GET /api/health', () => {
-  const prisma = new PrismaClient();
   // A real client pointed at a port where nothing listens, to exercise the failure path.
   const unreachable = new PrismaClient({
     datasourceUrl: 'mysql://casemate:casemate@127.0.0.1:1/casemate?connect_timeout=2',
