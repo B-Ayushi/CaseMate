@@ -6,6 +6,7 @@ import type { AppDeps } from './lib/config.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandlers.js';
 import { requireAuth } from './middleware/requireAuth.js';
 import { authRoutes } from './routes/authRoutes.js';
+import { caseRoutes, hearingRoutes } from './routes/caseRoutes.js';
 import { clientRoutes } from './routes/clientRoutes.js';
 import { healthRoutes } from './routes/healthRoutes.js';
 
@@ -25,6 +26,8 @@ export function createApp(deps: AppDeps): Express {
   // Everything below works on a lawyer's own data and needs a logged-in lawyer.
   const auth = requireAuth(config.jwtSecret);
   app.use('/api/clients', auth, clientRoutes(deps));
+  app.use('/api/cases', auth, caseRoutes(deps));
+  app.use('/api/hearings', auth, hearingRoutes(deps));
 
   app.use('/api', notFoundHandler);
   app.use(errorHandler(config));

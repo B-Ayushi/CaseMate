@@ -59,6 +59,13 @@ describe('clients API', () => {
     expect(updated.status).toBe(200);
     expect(updated.body.client).toMatchObject({ name: 'Ramesh K. Gupta', email: null });
 
+    // Saving without any change is fine too.
+    const unchanged = await request(app)
+      .put(`/api/clients/${id}`)
+      .set('Cookie', cookie)
+      .send({ ...newClient, name: 'Ramesh K. Gupta', email: '', preferredContact: 'PHONE' });
+    expect(unchanged.status).toBe(200);
+
     const profile = await request(app).get(`/api/clients/${id}`).set('Cookie', cookie);
     expect(profile.status).toBe(200);
     expect(profile.body.client.billing).toEqual({

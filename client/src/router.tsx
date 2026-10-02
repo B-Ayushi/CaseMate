@@ -5,6 +5,9 @@ import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage';
 import { LoginPage } from './pages/auth/LoginPage';
 import { ResetPasswordPage } from './pages/auth/ResetPasswordPage';
 import { SignupPage } from './pages/auth/SignupPage';
+import { EditCasePage, NewCasePage } from './pages/cases/CaseFormPage';
+import { CasePage } from './pages/cases/CasePage';
+import { CasesPage } from './pages/cases/CasesPage';
 import { EditClientPage, NewClientPage } from './pages/clients/ClientFormPage';
 import { ClientProfilePage } from './pages/clients/ClientProfilePage';
 import { ClientsPage } from './pages/clients/ClientsPage';
@@ -27,7 +30,11 @@ export const router = createBrowserRouter([
       {
         element: <AppShell />,
         children: [
-          { index: true, element: <Navigate to="/clients" replace /> },
+          { index: true, element: <Navigate to="/cases" replace /> },
+          { path: 'cases', element: <CasesPage /> },
+          { path: 'cases/new', element: <NewCasePage /> },
+          { path: 'cases/:id', element: <CasePage /> },
+          { path: 'cases/:id/edit', element: <EditCasePage /> },
           {
             path: 'clients',
             element: <ClientsPage />,

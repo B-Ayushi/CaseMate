@@ -42,7 +42,9 @@ export function errorHandler(config: Pick<AppConfig, 'nodeEnv'>): ErrorRequestHa
       return;
     }
     if (err instanceof HttpError) {
-      res.status(err.status).json({ error: err.message });
+      res
+        .status(err.status)
+        .json(err.fields ? { error: err.message, fields: err.fields } : { error: err.message });
       return;
     }
     if (isBodyParserError(err)) {

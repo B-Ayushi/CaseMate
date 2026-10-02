@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { errorMessage } from '../../api/http';
 import {
   Alert,
@@ -19,7 +19,7 @@ import {
   useSaveClient,
   type ClientProfile,
 } from '../../features/clients/api';
-import { applyServerErrors } from '../../lib/forms';
+import { applyServerErrors, safeNext } from '../../lib/forms';
 import { paiseToRupeesInput, rupeesToPaise } from '../../lib/money';
 import { clientFormSchema, type ClientForm } from '../../lib/validation';
 
@@ -45,7 +45,15 @@ function toForm(client: ClientProfile): ClientForm {
   };
 }
 
-function ClientFormFields({ initial, clientId }: { initial: ClientForm; clientId?: string }) {
+function ClientFormFields({
+  initial,
+  clientId,
+  returnTo,
+}: {
+  initial: ClientForm;
+  clientId?: string;
+  returnTo?: string | null;
+}) {
   const navigate = useNavigate();
   const save = useSaveClient(clientId);
   const [formError, setFormError] = useState<string | null>(null);
@@ -68,7 +76,10 @@ function ClientFormFields({ initial, clientId }: { initial: ClientForm; clientId
         languages: values.languages || null,
         hourlyRatePaise: values.hourlyRate ? rupeesToPaise(values.hourlyRate) : null,
       });
-      navigate(`/clients/${saved.id}`, { replace: true });
+      // Opened from another form (such as Add Case): go back there with this client chosen.
+      navigate(returnTo ? `${safeNext(returnTo)}?clientId=${saved.id}` : `/clients/${saved.id}`, {
+        replace: true,
+      });
     } catch (error) {
       setFormError(applyServerErrors(error, setError, { hourlyRatePaise: 'hourlyRate' }));
     }
@@ -127,7 +138,10 @@ function ClientFormFields({ initial, clientId }: { initial: ClientForm; clientId
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting ? 'Saving…' : clientId ? 'Save changes' : 'Add client'}
           </Button>
-          <ButtonLink to={clientId ? `/clients/${clientId}` : '/clients'} variant="secondary">
+          <ButtonLink
+            to={returnTo ? safeNext(returnTo) : clientId ? `/clients/${clientId}` : '/clients'}
+            variant="secondary"
+          >
             Cancel
           </ButtonLink>
         </div>
@@ -137,13 +151,14 @@ function ClientFormFields({ initial, clientId }: { initial: ClientForm; clientId
 }
 
 export function NewClientPage() {
+  const [params] = useSearchParams();
   return (
     <div className="space-y-4">
       <Link to="/clients" className="text-sm text-indigo-700 hover:underline lg:hidden">
         ← All clients
       </Link>
       <h2 className="text-xl font-semibold text-slate-900">Add a client</h2>
-      <ClientFormFields initial={emptyForm} />
+      <ClientFormFields initial={emptyForm} returnTo={params.get('returnTo')} />
     </div>
   );
 }

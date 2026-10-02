@@ -119,11 +119,11 @@ export async function updateClient(
   id: string,
   body: ClientBody,
 ) {
-  const { count } = await prisma.client.updateMany({ where: { id, lawyerId }, data: body });
-  if (count === 0) {
+  const owned = await prisma.client.findFirst({ where: { id, lawyerId }, select: { id: true } });
+  if (!owned) {
     throw new HttpError(404, NOT_FOUND);
   }
-  return prisma.client.findFirstOrThrow({ where: { id, lawyerId } });
+  return prisma.client.update({ where: { id }, data: body });
 }
 
 export async function deleteClient(prisma: PrismaClient, lawyerId: string, id: string) {

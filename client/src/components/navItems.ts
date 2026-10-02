@@ -1,5 +1,5 @@
 import type { ComponentType, SVGProps } from 'react';
-import { ClientsIcon } from './icons';
+import { CasesIcon, ClientsIcon } from './icons';
 
 export interface NavItem {
   to: string;
@@ -8,4 +8,7 @@ export interface NavItem {
 }
 
 // Only sections that are built appear here.
-export const navItems: NavItem[] = [{ to: '/clients', label: 'Clients', icon: ClientsIcon }];
+export const navItems: NavItem[] = [
+  { to: '/cases', label: 'Cases', icon: CasesIcon },
+  { to: '/clients', label: 'Clients', icon: ClientsIcon },
+];

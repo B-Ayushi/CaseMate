@@ -1,0 +1,273 @@
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useState } from 'react';
+import { useForm, useWatch } from 'react-hook-form';
+import {
+  Alert,
+  Button,
+  CheckboxField,
+  SelectField,
+  TextAreaField,
+  TextField,
+} from '../../components/ui';
+import {
+  outcomeLabels,
+  useAddHearing,
+  useLogOutcome,
+  useUpdateHearing,
+  type Hearing,
+  type HearingOutcome,
+} from '../../features/cases/api';
+import { formatDateTime, todayIst, toDateInput, toTimeInput } from '../../lib/dates';
+import { applyServerErrors } from '../../lib/forms';
+import {
+  hearingSlotForm,
+  outcomeFormSchema,
+  type HearingSlotForm,
+  type OutcomeForm,
+} from '../../lib/validation';
+
+const toSlot = (values: HearingSlotForm) => ({
+  date: values.date,
+  time: values.time,
+  purpose: values.purpose || null,
+  notes: values.notes || null,
+});
+
+// Schedules a new hearing for a case, or moves an existing one.
+export function HearingSlotFormCard({
+  caseId,
+  hearing,
+  submitLabel,
+  onDone,
+  onCancel,
+}: {
+  caseId: string;
+  hearing?: Hearing;
+  submitLabel: string;
+  onDone?: () => void;
+  onCancel?: () => void;
+}) {
+  const addHearing = useAddHearing(caseId);
+  const updateHearing = useUpdateHearing();
+  const [formError, setFormError] = useState<string | null>(null);
+  const {
+    register,
+    handleSubmit,
+    setError,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<HearingSlotForm>({
+    resolver: zodResolver(hearingSlotForm),
+    defaultValues: hearing
+      ? {
+          date: toDateInput(hearing.scheduledAt),
+          time: toTimeInput(hearing.scheduledAt),
+          purpose: hearing.purpose ?? '',
+          notes: hearing.notes ?? '',
+        }
+      : { date: '', time: '10:30', purpose: '', notes: '' },
+  });
+
+  const onSubmit = handleSubmit(async (values) => {
+    setFormError(null);
+    try {
+      if (hearing) {
+        await updateHearing.mutateAsync({ id: hearing.id, slot: toSlot(values) });
+      } else {
+        await addHearing.mutateAsync(toSlot(values));
+        reset();
+      }
+      onDone?.();
+    } catch (error) {
+      setFormError(applyServerErrors(error, setError, { 'hearing.date': 'date' }));
+    }
+  });
+
+  return (
+    <form onSubmit={onSubmit} noValidate className="space-y-4">
+      {formError && <Alert>{formError}</Alert>}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <TextField
+          label="Date"
+          type="date"
+          required
+          min={todayIst()}
+          error={errors.date?.message}
+          {...register('date')}
+        />
+        <TextField
+          label="Time (IST)"
+          type="time"
+          required
+          error={errors.time?.message}
+          {...register('time')}
+        />
+      </div>
+      <TextField label="Purpose" error={errors.purpose?.message} {...register('purpose')} />
+      <TextAreaField
+        label="Note for this hearing"
+        hint="Shown in your reminders"
+        error={errors.notes?.message}
+        {...register('notes')}
+      />
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit" disabled={isSubmitting}>
+          {isSubmitting ? 'Saving…' : submitLabel}
+        </Button>
+        {onCancel && (
+          <Button variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+        )}
+      </div>
+    </form>
+  );
+}
+
+// "Log today's outcome": what happened, time spent and the next date, in one save.
+export function OutcomeFormCard({ hearing }: { hearing: Hearing }) {
+  const logOutcome = useLogOutcome();
+  const [formError, setFormError] = useState<string | null>(null);
+  const {
+    register,
+    handleSubmit,
+    setError,
+    control,
+    formState: { errors, isSubmitting },
+  } = useForm<OutcomeForm>({
+    resolver: zodResolver(outcomeFormSchema),
+    defaultValues: {
+      outcome: 'ADJOURNED',
+      outcomeNotes: '',
+      hours: '',
+      minutes: '',
+      hasNextDate: true,
+      nextHearing: { date: '', time: toTimeInput(hearing.scheduledAt), purpose: '' },
+      closeCase: false,
+    },
+  });
+
+  const hasNextDate = useWatch({ control, name: 'hasNextDate' });
+  const outcome = useWatch({ control, name: 'outcome' });
+
+  const onSubmit = handleSubmit(async (values) => {
+    setFormError(null);
+    const minutes = Number(values.hours || 0) * 60 + Number(values.minutes || 0);
+    try {
+      await logOutcome.mutateAsync({
+        id: hearing.id,
+        body: {
+          outcome: values.outcome,
+          outcomeNotes: values.outcomeNotes || null,
+          timeSpentMinutes: minutes > 0 ? minutes : null,
+          nextHearing: values.hasNextDate
+            ? {
+                date: values.nextHearing.date,
+                time: values.nextHearing.time,
+                purpose: values.nextHearing.purpose || null,
+                notes: null,
+              }
+            : null,
+          closeCase: !values.hasNextDate && values.closeCase,
+        },
+      });
+    } catch (error) {
+      setFormError(
+        applyServerErrors(error, setError, {
+          'nextHearing.date': 'nextHearing.date',
+          timeSpentMinutes: 'minutes',
+        }),
+      );
+    }
+  });
+
+  return (
+    <form
+      onSubmit={onSubmit}
+      noValidate
+      className="space-y-4"
+      aria-label={`Outcome for ${formatDateTime(hearing.scheduledAt)}`}
+    >
+      {formError && <Alert>{formError}</Alert>}
+      <SelectField
+        label="What happened"
+        required
+        error={errors.outcome?.message}
+        {...register('outcome')}
+      >
+        {(Object.keys(outcomeLabels) as HearingOutcome[]).map((value) => (
+          <option key={value} value={value}>
+            {outcomeLabels[value]}
+          </option>
+        ))}
+      </SelectField>
+      <TextAreaField
+        label="Notes"
+        error={errors.outcomeNotes?.message}
+        {...register('outcomeNotes')}
+      />
+
+      <fieldset>
+        <legend className="text-sm font-medium text-slate-800">Time spent</legend>
+        <p className="text-xs text-slate-600">Added to billing at the client&apos;s rate.</p>
+        <div className="mt-1 grid max-w-xs grid-cols-2 gap-3">
+          <TextField
+            label="Hours"
+            inputMode="numeric"
+            error={errors.hours?.message}
+            {...register('hours')}
+          />
+          <TextField
+            label="Minutes"
+            inputMode="numeric"
+            error={errors.minutes?.message}
+            {...register('minutes')}
+          />
+        </div>
+      </fieldset>
+
+      <fieldset className="space-y-3 border-t border-slate-200 pt-4">
+        <legend className="sr-only">Next date</legend>
+        <CheckboxField label="Next date is known" {...register('hasNextDate')} />
+        {hasNextDate ? (
+          <div className="grid gap-4 sm:grid-cols-3">
+            <TextField
+              label="Next date"
+              type="date"
+              required
+              min={todayIst()}
+              error={errors.nextHearing?.date?.message}
+              {...register('nextHearing.date')}
+            />
+            <TextField
+              label="Time (IST)"
+              type="time"
+              required
+              error={errors.nextHearing?.time?.message}
+              {...register('nextHearing.time')}
+            />
+            <TextField
+              label="Purpose"
+              error={errors.nextHearing?.purpose?.message}
+              {...register('nextHearing.purpose')}
+            />
+          </div>
+        ) : (
+          <CheckboxField
+            label="Close this case"
+            hint={
+              outcome === 'DISPOSED'
+                ? 'The matter is disposed of. Closing stops all reminders for it.'
+                : 'Closing stops all reminders. You can reopen it later.'
+            }
+            {...register('closeCase')}
+          />
+        )}
+      </fieldset>
+
+      <Button type="submit" disabled={isSubmitting}>
+        {isSubmitting ? 'Saving…' : 'Save outcome'}
+      </Button>
+    </form>
+  );
+}

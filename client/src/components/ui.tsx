@@ -291,11 +291,19 @@ export function Card({
   children: ReactNode;
   className?: string;
 }) {
+  const headingId = useId();
   return (
-    <section className={cx('rounded-xl border border-slate-200 bg-white p-5 shadow-sm', className)}>
+    <section
+      aria-labelledby={title ? headingId : undefined}
+      className={cx('rounded-xl border border-slate-200 bg-white p-5 shadow-sm', className)}
+    >
       {(title || actions) && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          {title && <h2 className="text-base font-semibold text-slate-900">{title}</h2>}
+          {title && (
+            <h2 id={headingId} className="text-base font-semibold text-slate-900">
+              {title}
+            </h2>
+          )}
           {actions}
         </div>
       )}
