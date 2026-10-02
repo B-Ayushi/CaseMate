@@ -1,12 +1,7 @@
-import type { Request, RequestHandler, Response } from 'express';
+import type { Request, RequestHandler } from 'express';
 import type { AppDeps } from '../lib/config.js';
 import { HttpError } from '../lib/httpError.js';
-import {
-  SESSION_COOKIE,
-  SESSION_TTL_SECONDS,
-  sessionCookieOptions,
-  signSession,
-} from '../lib/session.js';
+import { endSession, startSession } from '../lib/session.js';
 import { currentLawyerId } from '../middleware/requireAuth.js';
 import * as authService from '../services/authService.js';
 import {
@@ -21,31 +16,22 @@ const FORGOT_PASSWORD_RESPONSE = {
 };
 
 export function authController({ prisma, mailer, config }: AppDeps) {
-  const isProduction = config.nodeEnv === 'production';
-
-  function startSession(res: Response, lawyerId: string) {
-    res.cookie(SESSION_COOKIE, signSession(lawyerId, config.jwtSecret), {
-      ...sessionCookieOptions(isProduction),
-      maxAge: SESSION_TTL_SECONDS * 1000,
-    });
-  }
-
   const signup: RequestHandler = async (req, res) => {
     const input = signupSchema.parse(req.body);
     const lawyer = await authService.signup(prisma, input);
-    startSession(res, lawyer.id);
+    await startSession(res, prisma, config, lawyer.id);
     res.status(201).json({ lawyer });
   };
 
   const login: RequestHandler = async (req, res) => {
     const input = loginSchema.parse(req.body);
     const lawyer = await authService.login(prisma, input);
-    startSession(res, lawyer.id);
+    await startSession(res, prisma, config, lawyer.id);
     res.json({ lawyer });
   };
 
   const logout: RequestHandler = (_req, res) => {
-    res.clearCookie(SESSION_COOKIE, sessionCookieOptions(isProduction));
+    endSession(res, config);
     res.json({ message: 'You have been logged out.' });
   };
 
@@ -53,7 +39,7 @@ export function authController({ prisma, mailer, config }: AppDeps) {
     const lawyer = await authService.getLawyer(prisma, currentLawyerId(req));
     if (!lawyer) {
       // The account was deleted after this session was issued.
-      res.clearCookie(SESSION_COOKIE, sessionCookieOptions(isProduction));
+      endSession(res, config);
       throw new HttpError(401, 'Please log in to continue.');
     }
     res.json({ lawyer });

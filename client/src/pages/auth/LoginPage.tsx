@@ -45,6 +45,9 @@ export function LoginPage() {
         {params.get('reset') === '1' && (
           <Alert tone="success">Your password has been changed. Log in with the new one.</Alert>
         )}
+        {params.get('deleted') === '1' && (
+          <Alert tone="success">Your account and all its data have been deleted.</Alert>
+        )}
         {formError && <Alert>{formError}</Alert>}
         <TextField
           label="Email"

@@ -30,19 +30,23 @@ export const newPasswordSchema = z
     error: 'Password must include at least one letter and one number',
   });
 
+export const lawyerNameSchema = z
+  .string({ error: 'Enter your name' })
+  .trim()
+  .min(1, { error: 'Enter your name' })
+  .max(100, { error: 'Name is too long' });
+
+export const barCouncilNumberSchema = z
+  .string({ error: 'Enter your Bar Council enrolment number' })
+  .trim()
+  .min(1, { error: 'Enter your Bar Council enrolment number' })
+  .max(50, { error: 'Enrolment number is too long' });
+
 export const signupSchema = z.object({
-  name: z
-    .string({ error: 'Enter your name' })
-    .trim()
-    .min(1, { error: 'Enter your name' })
-    .max(100, { error: 'Name is too long' }),
+  name: lawyerNameSchema,
   email: emailSchema,
   phone: indianMobileSchema,
-  barCouncilNumber: z
-    .string({ error: 'Enter your Bar Council enrolment number' })
-    .trim()
-    .min(1, { error: 'Enter your Bar Council enrolment number' })
-    .max(50, { error: 'Enrolment number is too long' }),
+  barCouncilNumber: barCouncilNumberSchema,
   password: newPasswordSchema,
 });
 

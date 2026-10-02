@@ -14,6 +14,7 @@ import { EditClientPage, NewClientPage } from './pages/clients/ClientFormPage';
 import { ClientProfilePage } from './pages/clients/ClientProfilePage';
 import { ClientsPage } from './pages/clients/ClientsPage';
 import { NotFoundPage } from './pages/NotFoundPage';
+import { SettingsPage } from './pages/SettingsPage';
 
 export const router = createBrowserRouter([
   {
@@ -34,6 +35,7 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <DashboardPage /> },
           { path: 'calendar', element: <CalendarPage /> },
+          { path: 'settings', element: <SettingsPage /> },
           { path: 'cases', element: <CasesPage /> },
           { path: 'cases/new', element: <NewCasePage /> },
           { path: 'cases/:id', element: <CasePage /> },

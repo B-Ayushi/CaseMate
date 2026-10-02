@@ -5,6 +5,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
 import { createMailer } from '../src/lib/mailer.js';
 import { prisma } from '../src/lib/prisma.js';
+import { createUnconfiguredSmsProvider } from '../src/lib/sms.js';
 import { buildTestApp, testConfig } from './helpers.js';
 
 describe('GET /api/health', () => {
@@ -32,6 +33,7 @@ describe('GET /api/health', () => {
         nodemailer.createTransport({ jsonTransport: true }),
         'test@casemate.invalid',
       ),
+      sms: createUnconfiguredSmsProvider(),
     });
     const res = await request(app).get('/api/health');
 

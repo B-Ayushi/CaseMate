@@ -5,6 +5,7 @@ import { createApp } from '../src/app.js';
 import type { AppConfig } from '../src/lib/config.js';
 import { createMailer, type MailMessage } from '../src/lib/mailer.js';
 import { prisma } from '../src/lib/prisma.js';
+import type { SmsProvider } from '../src/lib/sms.js';
 
 export const TEST_CLIENT_URL = 'http://localhost:5173';
 
@@ -16,9 +17,13 @@ export const testConfig: AppConfig = {
 
 // Builds the real app. Email goes through the real mailer code and Nodemailer, using its
 // built-in JSON transport instead of SMTP so tests never deliver mail; every message the
-// app sends is kept in `sentEmails` for the test to read.
-export function buildTestApp(overrides: Partial<AppConfig> = {}) {
+// app sends is kept in `sentEmails` for the test to read. SMS goes to a provider that
+// implements the same SmsProvider interface as Twilio and records each message in
+// `sentSms` (tests cannot send real text messages). `sms` replaces it, for example with
+// the unconfigured provider to exercise failures.
+export function buildTestApp(overrides: Partial<AppConfig> = {}, sms?: SmsProvider) {
   const sentEmails: MailMessage[] = [];
+  const sentSms: { to: string; body: string }[] = [];
   const mailer = createMailer(
     nodemailer.createTransport({ jsonTransport: true }),
     'CaseMate <test@casemate.invalid>',
@@ -32,8 +37,14 @@ export function buildTestApp(overrides: Partial<AppConfig> = {}) {
         sentEmails.push(message);
       },
     },
+    sms: sms ?? {
+      name: 'recorder',
+      async send(to, body) {
+        sentSms.push({ to, body });
+      },
+    },
   });
-  return { app, sentEmails };
+  return { app, sentEmails, sentSms };
 }
 
 let lawyerCounter = 0;

@@ -12,7 +12,7 @@ export function authRoutes(deps: AppDeps): Router {
   router.post('/signup', limit.signup, controller.signup);
   router.post('/login', limit.login, controller.login);
   router.post('/logout', controller.logout);
-  router.get('/me', requireAuth(deps.config.jwtSecret), controller.me);
+  router.get('/me', requireAuth(deps.prisma, deps.config), controller.me);
   router.post('/forgot-password', limit.forgotPassword, controller.forgotPassword);
   router.post('/reset-password', controller.resetPassword);
 

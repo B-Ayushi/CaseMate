@@ -105,6 +105,53 @@ export const clientFormSchema = z
     error: 'Add an email address, or choose another way to contact this client',
   });
 
+// Settings
+
+export const profileFormSchema = z.object({
+  name: requiredText(100, 'Enter your name'),
+  phone: indianMobileField,
+  barCouncilNumber: requiredText(50, 'Enter your Bar Council enrolment number'),
+});
+
+export const changePasswordFormSchema = z
+  .object({
+    currentPassword: z.string().min(1, { error: 'Enter your current password' }),
+    newPassword: newPasswordField,
+    confirmPassword: z.string(),
+  })
+  .refine((v) => v.newPassword === v.confirmPassword, {
+    path: ['confirmPassword'],
+    error: 'The two passwords do not match',
+  })
+  .refine((v) => v.newPassword !== v.currentPassword, {
+    path: ['newPassword'],
+    error: 'Choose a password different from your current one',
+  });
+
+export const SUMMARY_TIME = /^([01]\d|2[0-3]):(00|15|30|45)$/;
+
+export const reminderPrefsFormSchema = z.object({
+  emailEnabled: z.boolean(),
+  smsEnabled: z.boolean(),
+  dayBeforeEnabled: z.boolean(),
+  twoHourEnabled: z.boolean(),
+  dailySummaryEnabled: z.boolean(),
+  dailySummaryTime: z.string().regex(SUMMARY_TIME, {
+    error: 'Choose a time on the quarter hour, for example 07:00 or 07:15',
+  }),
+  missingOutcomeNudgeEnabled: z.boolean(),
+});
+
+export const deleteAccountFormSchema = z.object({
+  email: z.string().trim().min(1, { error: 'Type your account email' }),
+  password: z.string().min(1, { error: 'Enter your password' }),
+});
+
+export type ProfileForm = z.infer<typeof profileFormSchema>;
+export type ChangePasswordForm = z.infer<typeof changePasswordFormSchema>;
+export type ReminderPrefsForm = z.infer<typeof reminderPrefsFormSchema>;
+export type DeleteAccountForm = z.infer<typeof deleteAccountFormSchema>;
+
 export type SignupForm = z.infer<typeof signupSchema>;
 export type LoginForm = z.infer<typeof loginSchema>;
 export type ForgotPasswordForm = z.infer<typeof forgotPasswordSchema>;

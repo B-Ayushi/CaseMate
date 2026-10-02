@@ -10,6 +10,7 @@ import { caseRoutes, hearingRoutes } from './routes/caseRoutes.js';
 import { clientRoutes } from './routes/clientRoutes.js';
 import { calendarRoutes, dashboardRoutes, reminderRoutes } from './routes/dashboardRoutes.js';
 import { healthRoutes } from './routes/healthRoutes.js';
+import { settingsRoutes } from './routes/settingsRoutes.js';
 
 export function createApp(deps: AppDeps): Express {
   const { prisma, config } = deps;
@@ -25,13 +26,14 @@ export function createApp(deps: AppDeps): Express {
   app.use('/api/auth', authRoutes(deps));
 
   // Everything below works on a lawyer's own data and needs a logged-in lawyer.
-  const auth = requireAuth(config.jwtSecret);
+  const auth = requireAuth(prisma, config);
   app.use('/api/clients', auth, clientRoutes(deps));
   app.use('/api/cases', auth, caseRoutes(deps));
   app.use('/api/hearings', auth, hearingRoutes(deps));
   app.use('/api/dashboard', auth, dashboardRoutes(deps));
   app.use('/api/calendar', auth, calendarRoutes(deps));
   app.use('/api/reminders', auth, reminderRoutes(deps));
+  app.use('/api/settings', auth, settingsRoutes(deps));
 
   app.use('/api', notFoundHandler);
   app.use(errorHandler(config));

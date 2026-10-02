@@ -207,6 +207,48 @@ export const CheckboxField = forwardRef<
   );
 });
 
+// An on/off switch: a real checkbox (so forms and keyboards treat it as one) announced as
+// a switch and drawn as a sliding toggle.
+export const ToggleField = forwardRef<
+  HTMLInputElement,
+  InputHTMLAttributes<HTMLInputElement> & { label: string; description?: ReactNode }
+>(function ToggleField({ label, description, id, ...props }, ref) {
+  const autoId = useId();
+  const fieldId = id ?? autoId;
+  return (
+    <div className="flex items-start justify-between gap-4 py-3">
+      <div className="min-w-0">
+        <label htmlFor={fieldId} className="text-sm font-medium text-slate-900">
+          {label}
+        </label>
+        {description && (
+          <div id={`${fieldId}-description`} className="text-sm text-slate-600">
+            {description}
+          </div>
+        )}
+      </div>
+      <span className="relative inline-flex shrink-0">
+        <input
+          ref={ref}
+          id={fieldId}
+          type="checkbox"
+          role="switch"
+          aria-describedby={description ? `${fieldId}-description` : undefined}
+          className={cx(
+            'peer h-6 w-11 cursor-pointer appearance-none rounded-full bg-slate-500 transition-colors checked:bg-indigo-700',
+            focusRing,
+          )}
+          {...props}
+        />
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5"
+        />
+      </span>
+    </div>
+  );
+});
+
 export function Alert({
   tone = 'error',
   children,

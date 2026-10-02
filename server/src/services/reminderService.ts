@@ -1,7 +1,7 @@
 import type { Lawyer, Prisma, PrismaClient } from '@prisma/client';
 import { HttpError } from '../lib/httpError.js';
 import { istDateString, istDayRange } from '../lib/time.js';
-import { reasonReminderNoLongerApplies } from './reminderPlanner.js';
+import { reasonReminderNoLongerApplies, syncUpcomingHearings } from './reminderPlanner.js';
 
 export const lawyerReminderPrefsSelect = {
   emailEnabled: true,
@@ -70,6 +70,23 @@ export function retryBlockedReason(
   if (reason) return reason;
   if (hearing.scheduledAt <= context.now) return 'The hearing has already taken place.';
   return null;
+}
+
+// Brings every PENDING reminder of a lawyer's current hearings in line with their
+// settings (and each case's overrides, which still win), after the settings change.
+// Reminders that no longer fit are cancelled; missing ones are created only when their
+// send time is still ahead, reusing a cancelled row rather than adding a copy. SENT,
+// SENDING and FAILED reminders are never touched. Returns how many upcoming hearings
+// the lawyer has, for the "Updated reminders for N upcoming hearings" message.
+export async function rebuildLawyerReminders(
+  db: Prisma.TransactionClient,
+  lawyerId: string,
+  now = new Date(),
+): Promise<number> {
+  await syncUpcomingHearings(db, { lawyerId }, now);
+  return db.hearing.count({
+    where: { lawyerId, status: 'SCHEDULED', case: { status: 'ACTIVE' }, scheduledAt: { gt: now } },
+  });
 }
 
 // Puts a FAILED reminder back in the queue with a fresh set of attempts. Its send time

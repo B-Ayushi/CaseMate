@@ -1,5 +1,6 @@
 import type { PrismaClient } from '@prisma/client';
 import type { Mailer } from './mailer.js';
+import type { SmsProvider } from './sms.js';
 
 export interface AppConfig {
   nodeEnv: 'development' | 'test' | 'production';
@@ -12,5 +13,6 @@ export interface AppConfig {
 export interface AppDeps {
   prisma: PrismaClient;
   mailer: Mailer;
+  sms: SmsProvider;
   config: AppConfig;
 }

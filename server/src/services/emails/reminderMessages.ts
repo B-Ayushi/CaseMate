@@ -104,6 +104,25 @@ export function dailySummaryEmail(
   };
 }
 
+// Sent from Settings so the lawyer can check that email reaches their inbox.
+export function testReminderEmail(to: string, name: string, clientUrl: string): MailMessage {
+  const title = 'Your CaseMate test reminder';
+  const body =
+    'This is a test from Settings. Hearing reminders and your daily summary will arrive at this address.';
+  return {
+    to,
+    subject: 'CaseMate test reminder',
+    text: `Hello ${name},\n\n${body}\n\nOpen CaseMate: ${clientUrl}`,
+    html: emailLayout(
+      title,
+      `<p>Hello ${escapeHtml(name)},</p><p>${escapeHtml(body)}</p>${buttonHtml(clientUrl, 'Open CaseMate')}`,
+    ),
+  };
+}
+
+export const testReminderSms = () =>
+  'CaseMate: This is a test SMS from Settings. Your hearing reminders will arrive at this number.';
+
 // SMS text is kept short: one or two segments.
 function smsText(prefix: string, h: HearingInfo): string {
   const parts = [
