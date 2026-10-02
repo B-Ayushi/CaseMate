@@ -77,7 +77,7 @@ model Lawyer {
   phone                  String    @db.VarChar(20)
   barCouncilNumber       String    @db.VarChar(50)
   passwordHash           String
-  passwordResetTokenHash String?
+  passwordResetTokenHash String?   @unique
   passwordResetExpiresAt DateTime?
   defaultHourlyRatePaise Int       @default(0)
 

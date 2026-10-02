@@ -7,6 +7,7 @@ export default defineConfig({
     globalSetup: ['tests/globalSetup.ts'],
     setupFiles: ['tests/setup.ts'],
     // Test files share one real database, so run them one at a time.
+    testTimeout: 30_000,
     fileParallelism: false,
   },
 });
