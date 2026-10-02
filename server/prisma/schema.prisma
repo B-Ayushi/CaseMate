@@ -1,0 +1,10 @@
+// CaseMate database schema. Models are added feature by feature.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}

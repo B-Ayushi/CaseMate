@@ -1,0 +1,37 @@
+{
+  "name": "casemate",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "CaseMate: hearings, reminders, clients and billing for individual advocates in India",
+  "engines": {
+    "node": "\u003e=20"
+  },
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev": "concurrently --kill-others-on-fail --names server,client --prefix-colors cyan,magenta \"npm run dev -w server\" \"npm run dev -w client\"",
+    "lint": "eslint . \u0026\u0026 prettier --check .",
+    "format": "prettier --write .",
+    "typecheck": "npm run typecheck --workspaces",
+    "test": "npm run test --workspaces",
+    "build": "npm run build --workspaces"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "concurrently": "^9.2.0",
+    "eslint": "^10.11.0",
+    "eslint-config-prettier": "^10.1.0",
+    "eslint-plugin-react-hooks": "^7.1.0",
+    "eslint-plugin-react-refresh": "^0.5.7",
+    "globals": "^17.13.0",
+    "prettier": "^3.6.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.46.0",
+    "vitest": "^4.1.11",
+    "vite": "^7.1.0",
+    "@types/node": "^20.19.0"
+  }
+}
