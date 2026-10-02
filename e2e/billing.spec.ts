@@ -33,6 +33,8 @@ const nav = (page: Page, name: string) =>
   page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name, exact: true });
 
 test('log time, invoice it, download the PDF, mark it sent and paid', async ({ page }) => {
+  // A long journey through several pages; allow it more than the default 30 seconds.
+  test.setTimeout(60_000);
   await signUpViaApi(page);
   const { clientId, caseId } = await clientWithCase(page);
   // Some earlier time, logged through the API.

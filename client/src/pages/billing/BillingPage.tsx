@@ -426,7 +426,7 @@ function Invoices({ highlight }: { highlight: string | null }) {
           <th scope="col" className="py-2 text-right">
             Amount
           </th>
-          <th scope="col" className="py-2">
+          <th scope="col" className="py-2 pl-6">
             Status
           </th>
           <th scope="col" className="py-2">
@@ -450,7 +450,7 @@ function Invoices({ highlight }: { highlight: string | null }) {
             <td className="whitespace-nowrap py-3 text-right font-medium">
               {formatPaise(invoice.totalPaise)}
             </td>
-            <td className="py-3">
+            <td className="py-3 pl-6">
               <InvoiceStatusPill status={invoice.displayStatus} />
             </td>
             <td className="py-3">

@@ -15,6 +15,8 @@ export const E2E_DATABASE_URL = testDatabaseUrl;
 
 export default defineConfig({
   testDir: 'e2e',
+  // README screenshots have their own config (playwright.screenshots.config.ts).
+  testIgnore: ['screenshots/**'],
   globalSetup: './e2e/globalSetup.ts',
   fullyParallel: false,
   workers: 1,

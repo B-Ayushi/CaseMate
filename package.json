@@ -19,6 +19,7 @@
     "test": "npm run test --workspaces",
     "build": "npm run build --workspaces",
     "test:e2e": "playwright test",
+    "screenshots": "playwright test -c playwright.screenshots.config.ts",
     "reminders:tick": "npm run reminders:tick -w server"
   },
   "devDependencies": {
