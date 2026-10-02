@@ -1,5 +1,12 @@
 import type { ComponentType, SVGProps } from 'react';
-import { CalendarIcon, CasesIcon, ClientsIcon, DashboardIcon, SettingsIcon } from './icons';
+import {
+  BillingIcon,
+  CalendarIcon,
+  CasesIcon,
+  ClientsIcon,
+  DashboardIcon,
+  SettingsIcon,
+} from './icons';
 
 export interface NavItem {
   to: string;
@@ -13,5 +20,6 @@ export const navItems: NavItem[] = [
   { to: '/cases', label: 'Cases', icon: CasesIcon },
   { to: '/calendar', label: 'Calendar', icon: CalendarIcon },
   { to: '/clients', label: 'Clients', icon: ClientsIcon },
+  { to: '/billing', label: 'Billing', icon: BillingIcon },
   { to: '/settings', label: 'Settings', icon: SettingsIcon },
 ];

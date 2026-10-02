@@ -106,6 +106,28 @@ export function updateReminderPrefs(
   );
 }
 
+// The default hourly rate, used for time on cases whose client has no rate of their own.
+// Changing it affects only time logged afterwards: every entry keeps the rate it was
+// created with.
+export function getBillingSettings(prisma: PrismaClient, lawyerId: string) {
+  return prisma.lawyer.findUniqueOrThrow({
+    where: { id: lawyerId },
+    select: { defaultHourlyRatePaise: true },
+  });
+}
+
+export function updateBillingSettings(
+  prisma: PrismaClient,
+  lawyerId: string,
+  input: { defaultHourlyRatePaise: number },
+) {
+  return prisma.lawyer.update({
+    where: { id: lawyerId },
+    data: input,
+    select: { defaultHourlyRatePaise: true },
+  });
+}
+
 export type TestResult =
   { status: 'sent'; to: string } | { status: 'failed'; to: string; reason: string };
 

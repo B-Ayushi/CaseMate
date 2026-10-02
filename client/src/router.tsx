@@ -5,6 +5,8 @@ import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage';
 import { LoginPage } from './pages/auth/LoginPage';
 import { ResetPasswordPage } from './pages/auth/ResetPasswordPage';
 import { SignupPage } from './pages/auth/SignupPage';
+import { BillingPage } from './pages/billing/BillingPage';
+import { NewInvoicePage } from './pages/billing/NewInvoicePage';
 import { CalendarPage } from './pages/CalendarPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { EditCasePage, NewCasePage } from './pages/cases/CaseFormPage';
@@ -35,6 +37,8 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <DashboardPage /> },
           { path: 'calendar', element: <CalendarPage /> },
+          { path: 'billing', element: <BillingPage /> },
+          { path: 'billing/invoices/new', element: <NewInvoicePage /> },
           { path: 'settings', element: <SettingsPage /> },
           { path: 'cases', element: <CasesPage /> },
           { path: 'cases/new', element: <NewCasePage /> },

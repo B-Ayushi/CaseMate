@@ -1,6 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
-import { addDaysToIsoDay, istDateString, istDayRange } from '../lib/time.js';
+import { addDaysToIsoDay, dateOnly, istDateString, istDayRange } from '../lib/time.js';
 import { hearingSummarySelect, visibleHearingWhere } from './hearingService.js';
+import { isOverdue } from './invoiceStatus.js';
 import { describeFailure } from './reminderFailures.js';
 import {
   failedReminderInclude,
@@ -18,8 +19,9 @@ const FAILED_SHOWN_FOR_MS = 7 * DAY;
 // calendar days; their boundaries are converted to UTC instants for the queries.
 // - today's hearings: every hearing today (scheduled or with its outcome logged)
 // - next 7 days: scheduled hearings from tomorrow to 7 days ahead, counted per day
-// - needs attention: hearings whose time has passed with no outcome logged, and
-//   reminders that failed in the last 7 days
+// - needs attention: hearings whose time has passed with no outcome logged, reminders
+//   that failed in the last 7 days, and sent invoices past their due date
+// - unpaid invoices: how many sent invoices are not paid yet, and their total
 export async function getDashboard(prisma: PrismaClient, lawyerId: string, now = new Date()) {
   const today = istDateString(now);
   const todayRange = istDayRange(today);
@@ -73,6 +75,27 @@ export async function getDashboard(prisma: PrismaClient, lawyerId: string, now =
       hasHearingLaterToday(prisma, lawyerId, now),
     ]);
 
+  // Sent invoices not yet paid; those past their due date need attention.
+  const unpaid = await prisma.invoice.findMany({
+    where: { lawyerId, status: 'SENT' },
+    orderBy: { dueDate: 'asc' },
+    select: {
+      id: true,
+      number: true,
+      totalPaise: true,
+      status: true,
+      dueDate: true,
+      client: { select: { id: true, name: true } },
+    },
+  });
+  const overdueInvoices = unpaid
+    .filter((invoice) => isOverdue(invoice, now))
+    .map(({ dueDate, status: _status, ...invoice }) => ({
+      ...invoice,
+      dueDate: dueDate.toISOString().slice(0, 10),
+      daysOverdue: Math.round((dateOnly(today).getTime() - dueDate.getTime()) / DAY),
+    }));
+
   const days = Array.from({ length: UPCOMING_DAYS }, (_, i) => {
     const date = addDaysToIsoDay(today, i + 1);
     return { date, count: upcoming.filter((h) => istDateString(h.scheduledAt) === date).length };
@@ -108,9 +131,11 @@ export async function getDashboard(prisma: PrismaClient, lawyerId: string, now =
       today: todayHearings.length,
       next7Days: upcoming.length,
       needNextDate: missingOutcome.length,
+      unpaidInvoices: unpaid.length,
+      unpaidPaise: unpaid.reduce((sum, invoice) => sum + invoice.totalPaise, 0),
     },
     todayHearings,
     next7Days: { total: upcoming.length, days },
-    needsAttention: { missingOutcome, failedReminders },
+    needsAttention: { missingOutcome, failedReminders, overdueInvoices },
   };
 }

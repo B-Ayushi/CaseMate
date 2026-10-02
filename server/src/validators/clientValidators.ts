@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { emailSchema, indianMobileSchema } from './authValidators.js';
-import { optionalText, paiseSchema, requiredText } from './common.js';
+import { hourlyRateSchema, optionalText, requiredText } from './common.js';
 
 // These rules are mirrored in the client forms.
 
@@ -19,7 +19,7 @@ export const clientBodySchema = z
       })
       .default('PHONE'),
     languages: optionalText(191, 'Languages'),
-    hourlyRatePaise: paiseSchema.nullish().transform((value) => value ?? null),
+    hourlyRatePaise: hourlyRateSchema.nullish().transform((value) => value ?? null),
   })
   .refine((client) => client.preferredContact !== 'EMAIL' || client.email !== null, {
     path: ['email'],

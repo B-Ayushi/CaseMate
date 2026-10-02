@@ -6,6 +6,7 @@ import type { AppDeps } from './lib/config.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandlers.js';
 import { requireAuth } from './middleware/requireAuth.js';
 import { authRoutes } from './routes/authRoutes.js';
+import { billingRoutes, invoiceRoutes, timeEntryRoutes } from './routes/billingRoutes.js';
 import { caseRoutes, hearingRoutes } from './routes/caseRoutes.js';
 import { clientRoutes } from './routes/clientRoutes.js';
 import { calendarRoutes, dashboardRoutes, reminderRoutes } from './routes/dashboardRoutes.js';
@@ -34,6 +35,9 @@ export function createApp(deps: AppDeps): Express {
   app.use('/api/calendar', auth, calendarRoutes(deps));
   app.use('/api/reminders', auth, reminderRoutes(deps));
   app.use('/api/settings', auth, settingsRoutes(deps));
+  app.use('/api/time-entries', auth, timeEntryRoutes(deps));
+  app.use('/api/invoices', auth, invoiceRoutes(deps));
+  app.use('/api/billing', auth, billingRoutes(deps));
 
   app.use('/api', notFoundHandler);
   app.use(errorHandler(config));

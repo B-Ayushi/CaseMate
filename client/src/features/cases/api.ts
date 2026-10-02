@@ -223,3 +223,21 @@ export function useLogOutcome() {
     onSuccess: invalidate,
   });
 }
+
+export function useEditOutcome() {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: ({
+      id,
+      body,
+    }: {
+      id: string;
+      body: {
+        outcome: HearingOutcome;
+        outcomeNotes: string | null;
+        timeSpentMinutes: number | null;
+      };
+    }) => api.put(`/hearings/${id}/outcome`, body),
+    onSuccess: invalidate,
+  });
+}

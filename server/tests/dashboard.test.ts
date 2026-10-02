@@ -100,7 +100,7 @@ describe('dashboard: IST days', () => {
       { date: day(7), count: 1 },
     ]);
     expect(dashboard.next7Days.total).toBe(4);
-    expect(dashboard.counts).toEqual({ today: 1, next7Days: 4, needNextDate: 0 });
+    expect(dashboard.counts).toMatchObject({ today: 1, next7Days: 4, needNextDate: 0 });
   });
 });
 
@@ -389,9 +389,19 @@ describe('ownership', () => {
 
     const dashboard = (await asB(request(app).get('/api/dashboard'))).body;
     expect(dashboard.hasCases).toBe(false);
-    expect(dashboard.counts).toEqual({ today: 0, next7Days: 0, needNextDate: 0 });
+    expect(dashboard.counts).toEqual({
+      today: 0,
+      next7Days: 0,
+      needNextDate: 0,
+      unpaidInvoices: 0,
+      unpaidPaise: 0,
+    });
     expect(dashboard.todayHearings).toEqual([]);
-    expect(dashboard.needsAttention).toEqual({ missingOutcome: [], failedReminders: [] });
+    expect(dashboard.needsAttention).toEqual({
+      missingOutcome: [],
+      failedReminders: [],
+      overdueInvoices: [],
+    });
 
     const calendar = (await asB(request(app).get(`/api/calendar?month=${D.slice(0, 7)}`))).body;
     expect(calendar.hearings).toEqual([]);

@@ -110,12 +110,12 @@ function BillingCard({ client }: { client: ClientProfile }) {
   const { billedPaise, paidPaise, duePaise, overduePaise, unbilledPaise } = client.billing;
   const rows = [
     { label: 'Billed', value: billedPaise },
-    { label: 'Received', value: paidPaise },
+    { label: 'Paid', value: paidPaise },
     { label: 'Due', value: duePaise },
     { label: 'Not yet billed', value: unbilledPaise },
   ];
   return (
-    <Card title="Billing">
+    <Card title="Billing" actions={<TextLink to="/billing">Invoices and time</TextLink>}>
       <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         {rows.map((row) => (
           <div key={row.label}>
@@ -128,6 +128,9 @@ function BillingCard({ client }: { client: ClientProfile }) {
           </div>
         ))}
       </dl>
+      <p className="mt-3 text-xs text-slate-600">
+        From this client’s invoices: drafts are not counted until they are sent.
+      </p>
       {overduePaise > 0 && (
         <div className="mt-4">
           <Alert tone="warning">{formatPaise(overduePaise)} is overdue.</Alert>

@@ -1,7 +1,7 @@
 import { rateLimit } from 'express-rate-limit';
 
 // Limits are per IP address. Each app instance gets its own counters.
-export function createAuthRateLimiters() {
+export function createAuthRateLimiters(options: { signupsPerHour?: number } = {}) {
   return {
     // Only failed attempts count, so a lawyer who logs in correctly is never locked out.
     login: rateLimit({
@@ -22,7 +22,7 @@ export function createAuthRateLimiters() {
     // Each signup runs a deliberately slow bcrypt hash, so it is limited too.
     signup: rateLimit({
       windowMs: 60 * 60 * 1000,
-      limit: 20,
+      limit: options.signupsPerHour ?? 20,
       standardHeaders: 'draft-8',
       legacyHeaders: false,
       message: { error: 'Too many sign-ups from this network. Please try again later.' },

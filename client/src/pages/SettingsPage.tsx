@@ -28,13 +28,17 @@ import {
   type ReminderPrefs,
   type TestResult,
 } from '../features/settings/api';
+import { useBillingSettings, useUpdateBillingSettings } from '../features/billing/api';
 import { formatIst, istToUtc, todayIst } from '../lib/dates';
+import { paiseToRupeesInput, rupeesToPaise } from '../lib/money';
 import { applyServerErrors } from '../lib/forms';
 import {
+  billingSettingsFormSchema,
   changePasswordFormSchema,
   deleteAccountFormSchema,
   profileFormSchema,
   reminderPrefsFormSchema,
+  type BillingSettingsForm,
   type ChangePasswordForm,
   type DeleteAccountForm,
   type ProfileForm,
@@ -419,6 +423,77 @@ function RemindersSection() {
   );
 }
 
+function BillingForm({ ratePaise }: { ratePaise: number }) {
+  const update = useUpdateBillingSettings();
+  const [formError, setFormError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const {
+    register,
+    handleSubmit,
+    setError,
+    formState: { errors, isSubmitting },
+  } = useForm<BillingSettingsForm>({
+    resolver: zodResolver(billingSettingsFormSchema),
+    defaultValues: { defaultRate: paiseToRupeesInput(ratePaise) },
+  });
+
+  const onSubmit = handleSubmit(async ({ defaultRate }) => {
+    setFormError(null);
+    setSaved(false);
+    try {
+      await update.mutateAsync({ defaultHourlyRatePaise: rupeesToPaise(defaultRate)! });
+      setSaved(true);
+    } catch (error) {
+      setFormError(applyServerErrors(error, setError, { defaultHourlyRatePaise: 'defaultRate' }));
+    }
+  });
+
+  return (
+    <form onSubmit={onSubmit} noValidate className="space-y-4">
+      <SectionStatus
+        error={formError}
+        success={
+          saved
+            ? 'Default rate saved. It applies to time logged from now on; earlier time keeps its rate.'
+            : null
+        }
+      />
+      <div className="max-w-xs">
+        <TextField
+          label="Default hourly rate (₹)"
+          inputMode="decimal"
+          required
+          hint="Used for clients without their own rate, for example 2500"
+          error={errors.defaultRate?.message}
+          {...register('defaultRate')}
+        />
+      </div>
+      <p className="text-xs text-slate-600">
+        Each time entry keeps the rate it was logged at, so changing a rate never changes earlier
+        time or invoices. Set a client’s own rate on their profile.
+      </p>
+      <Button type="submit" disabled={isSubmitting}>
+        {isSubmitting ? 'Saving…' : 'Save billing settings'}
+      </Button>
+    </form>
+  );
+}
+
+function BillingSection() {
+  const billing = useBillingSettings();
+  return (
+    <Card title="Billing">
+      {billing.isPending ? (
+        <Spinner label="Loading your billing settings…" />
+      ) : billing.isError ? (
+        <Alert>{errorMessage(billing.error)}</Alert>
+      ) : (
+        <BillingForm ratePaise={billing.data.defaultHourlyRatePaise} />
+      )}
+    </Card>
+  );
+}
+
 function DeleteAccountDialog({ email, onClose }: { email: string; onClose: () => void }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -558,12 +633,13 @@ export function SettingsPage() {
     <div>
       <PageHeader
         title="Settings"
-        description="Your profile, password, reminders and data. All times are Indian Standard Time."
+        description="Your profile, password, reminders, billing and data. All times are Indian Standard Time."
       />
       <div className="space-y-6">
         <ProfileSection />
         <PasswordSection />
         <RemindersSection />
+        <BillingSection />
         <YourDataSection />
       </div>
     </div>

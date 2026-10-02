@@ -38,13 +38,32 @@ export interface FailedReminder {
   retryBlockedReason: string | null;
 }
 
+export interface OverdueInvoice {
+  id: string;
+  number: string;
+  totalPaise: number;
+  dueDate: string; // "yyyy-MM-dd"
+  daysOverdue: number;
+  client: { id: string; name: string };
+}
+
 export interface Dashboard {
   today: string;
   hasCases: boolean;
-  counts: { today: number; next7Days: number; needNextDate: number };
+  counts: {
+    today: number;
+    next7Days: number;
+    needNextDate: number;
+    unpaidInvoices: number;
+    unpaidPaise: number;
+  };
   todayHearings: HearingSummary[];
   next7Days: { total: number; days: { date: string; count: number }[] };
-  needsAttention: { missingOutcome: HearingSummary[]; failedReminders: FailedReminder[] };
+  needsAttention: {
+    missingOutcome: HearingSummary[];
+    failedReminders: FailedReminder[];
+    overdueInvoices: OverdueInvoice[];
+  };
 }
 
 export interface CalendarHearing extends HearingSummary {

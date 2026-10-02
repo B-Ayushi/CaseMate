@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ApiError, errorMessage } from '../../api/http';
 import { Alert, Badge, Button, ButtonLink, Card, Spinner, TextLink } from '../../components/ui';
 import {
@@ -15,8 +15,9 @@ import {
 } from '../../features/cases/api';
 import { useNow } from '../../hooks/useNow';
 import { formatDateTime, formatDay, formatTime, toDateInput } from '../../lib/dates';
-import { formatPaise } from '../../lib/money';
-import { HearingSlotFormCard, OutcomeFormCard } from './HearingForms';
+import { cx } from '../../lib/cx';
+import { CaseTimeTab } from './CaseTimeTab';
+import { EditOutcomeForm, HearingSlotFormCard, OutcomeFormCard } from './HearingForms';
 
 function formatMinutes(total: number) {
   const h = Math.floor(total / 60);
@@ -135,7 +136,8 @@ function NextHearingCard({ legalCase, hearing }: { legalCase: CaseDetail; hearin
   );
 }
 
-function HearingHistory({ hearings }: { hearings: Hearing[] }) {
+function HearingHistory({ hearings, caseId }: { hearings: Hearing[]; caseId: string }) {
+  const [editing, setEditing] = useState<string | null>(null);
   if (hearings.length === 0) return <p className="text-sm text-slate-600">No earlier hearings.</p>;
   return (
     <ol className="space-y-3">
@@ -162,6 +164,18 @@ function HearingHistory({ hearings }: { hearings: Hearing[] }) {
               Time spent: {formatMinutes(h.timeSpentMinutes)}
             </p>
           ) : null}
+          {h.status === 'COMPLETED' &&
+            (editing === h.id ? (
+              <EditOutcomeForm hearing={h} caseId={caseId} onDone={() => setEditing(null)} />
+            ) : (
+              <Button
+                variant="ghost"
+                className="mt-1 px-2 py-1 text-xs"
+                onClick={() => setEditing(h.id)}
+              >
+                Edit outcome<span className="sr-only"> of {formatDateTime(h.scheduledAt)}</span>
+              </Button>
+            ))}
         </li>
       ))}
     </ol>
@@ -178,6 +192,49 @@ function Fact({ label, value }: { label: string; value: string | null }) {
   );
 }
 
+type CaseTab = 'hearings' | 'time';
+const TABS: { id: CaseTab; label: string }[] = [
+  { id: 'hearings', label: 'Hearings' },
+  { id: 'time', label: 'Time and billing' },
+];
+
+// Tabs: the selected one is in the address (?tab=time) so it survives a reload and can be
+// linked to. Arrow keys move between tabs.
+function CaseTabs({ selected, onSelect }: { selected: CaseTab; onSelect: (tab: CaseTab) => void }) {
+  return (
+    <div role="tablist" aria-label="Case sections" className="flex gap-1 border-b border-slate-200">
+      {TABS.map((tab, i) => (
+        <button
+          key={tab.id}
+          type="button"
+          role="tab"
+          id={`tab-${tab.id}`}
+          aria-selected={selected === tab.id}
+          aria-controls={`panel-${tab.id}`}
+          tabIndex={selected === tab.id ? 0 : -1}
+          onClick={() => onSelect(tab.id)}
+          onKeyDown={(event) => {
+            if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+            event.preventDefault();
+            const next =
+              TABS[(i + (event.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length]!;
+            onSelect(next.id);
+            document.getElementById(`tab-${next.id}`)?.focus();
+          }}
+          className={cx(
+            '-mb-px border-b-2 px-4 py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-indigo-600',
+            selected === tab.id
+              ? 'border-indigo-700 text-indigo-800'
+              : 'border-transparent text-slate-600 hover:text-slate-900',
+          )}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function CasePage() {
   const { id = '' } = useParams();
   const legalCase = useCase(id);
@@ -187,6 +244,10 @@ export function CasePage() {
   const now = useNow();
   const { hash } = useLocation();
   const loaded = legalCase.isSuccess;
+  const [params, setParams] = useSearchParams();
+  const tab: CaseTab = params.get('tab') === 'time' ? 'time' : 'hearings';
+  const selectTab = (next: CaseTab) =>
+    setParams(next === 'time' ? { tab: 'time' } : {}, { replace: true });
 
   // Links such as "Add next date" on the dashboard point at one hearing's outcome card
   // (#outcome-<hearing id>): bring it into view and put the cursor in its first field.
@@ -260,55 +321,64 @@ export function CasePage() {
       </div>
       {deleteError && <Alert>{deleteError}</Alert>}
 
-      {awaitingOutcome.map((h) => (
-        <Card
-          key={h.id}
-          id={`outcome-${h.id}`}
-          title={`Log the outcome of ${formatDay(h.scheduledAt)}, ${formatTime(h.scheduledAt)}`}
-          className="border-amber-200 ring-1 ring-amber-100"
-        >
-          <OutcomeFormCard hearing={h} />
-        </Card>
-      ))}
+      <CaseTabs selected={tab} onSelect={selectTab} />
 
-      {next ? (
-        <NextHearingCard legalCase={c} hearing={next} />
-      ) : c.status === 'ACTIVE' && awaitingOutcome.length === 0 ? (
-        <Card title="Schedule the next hearing" className="border-amber-200 ring-1 ring-amber-100">
-          <p className="mb-4 text-sm text-amber-900">This case has no upcoming hearing date.</p>
-          <HearingSlotFormCard caseId={c.id} submitLabel="Schedule hearing" />
-        </Card>
-      ) : null}
-
-      <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
-        <Card title="Hearing history">
-          <HearingHistory hearings={history} />
-        </Card>
-        <div className="space-y-6">
-          <Card title="Details">
-            <dl className="space-y-3">
-              <Fact label="Court" value={[c.courtName, c.courtroom].filter(Boolean).join(', ')} />
-              <Fact label="Judge" value={c.judge} />
-              <Fact label="Case type" value={c.caseType} />
-              <Fact label="Opposing party" value={c.opposingParty} />
-              <Fact label="Opposing counsel" value={c.opposingCounsel} />
-              <Fact label="Notes" value={c.notes} />
-            </dl>
-          </Card>
-          <Card title="Time">
-            <dl className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <dt className="text-slate-600">Total logged</dt>
-                <dd className="font-medium">{formatMinutes(c.time.totalMinutes)}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-slate-600">Not yet billed</dt>
-                <dd className="font-medium">{formatPaise(c.time.unbilledPaise)}</dd>
-              </div>
-            </dl>
-          </Card>
+      {tab === 'time' ? (
+        <div role="tabpanel" id="panel-time" aria-labelledby="tab-time">
+          <CaseTimeTab legalCase={c} />
         </div>
-      </div>
+      ) : (
+        <div
+          role="tabpanel"
+          id="panel-hearings"
+          aria-labelledby="tab-hearings"
+          className="space-y-6"
+        >
+          {awaitingOutcome.map((h) => (
+            <Card
+              key={h.id}
+              id={`outcome-${h.id}`}
+              title={`Log the outcome of ${formatDay(h.scheduledAt)}, ${formatTime(h.scheduledAt)}`}
+              className="border-amber-200 ring-1 ring-amber-100"
+            >
+              <OutcomeFormCard hearing={h} />
+            </Card>
+          ))}
+
+          {next ? (
+            <NextHearingCard legalCase={c} hearing={next} />
+          ) : c.status === 'ACTIVE' && awaitingOutcome.length === 0 ? (
+            <Card
+              title="Schedule the next hearing"
+              className="border-amber-200 ring-1 ring-amber-100"
+            >
+              <p className="mb-4 text-sm text-amber-900">This case has no upcoming hearing date.</p>
+              <HearingSlotFormCard caseId={c.id} submitLabel="Schedule hearing" />
+            </Card>
+          ) : null}
+
+          <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
+            <Card title="Hearing history">
+              <HearingHistory hearings={history} caseId={c.id} />
+            </Card>
+            <div className="space-y-6">
+              <Card title="Details">
+                <dl className="space-y-3">
+                  <Fact
+                    label="Court"
+                    value={[c.courtName, c.courtroom].filter(Boolean).join(', ')}
+                  />
+                  <Fact label="Judge" value={c.judge} />
+                  <Fact label="Case type" value={c.caseType} />
+                  <Fact label="Opposing party" value={c.opposingParty} />
+                  <Fact label="Opposing counsel" value={c.opposingCounsel} />
+                  <Fact label="Notes" value={c.notes} />
+                </dl>
+              </Card>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

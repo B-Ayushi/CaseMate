@@ -4,6 +4,7 @@ import { endSession, startSession } from '../lib/session.js';
 import { istDateString } from '../lib/time.js';
 import { currentLawyerId } from '../middleware/requireAuth.js';
 import * as settingsService from '../services/settingsService.js';
+import { billingSettingsSchema } from '../validators/billingValidators.js';
 import {
   changePasswordSchema,
   deleteAccountSchema,
@@ -43,6 +44,17 @@ export function settingsController({ prisma, mailer, sms, config }: AppDeps) {
     res.json(await settingsService.updateReminderPrefs(prisma, currentLawyerId(req), input));
   };
 
+  const getBilling: RequestHandler = async (req, res) => {
+    res.json({ billing: await settingsService.getBillingSettings(prisma, currentLawyerId(req)) });
+  };
+
+  const updateBilling: RequestHandler = async (req, res) => {
+    const input = billingSettingsSchema.parse(req.body);
+    res.json({
+      billing: await settingsService.updateBillingSettings(prisma, currentLawyerId(req), input),
+    });
+  };
+
   const testReminder: RequestHandler = async (req, res) => {
     res.json(
       await settingsService.sendTestReminder(
@@ -73,6 +85,8 @@ export function settingsController({ prisma, mailer, sms, config }: AppDeps) {
     changePassword,
     getReminders,
     updateReminders,
+    getBilling,
+    updateBilling,
     testReminder,
     exportData,
     deleteAccount,

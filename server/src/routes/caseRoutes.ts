@@ -27,6 +27,7 @@ export function hearingRoutes(deps: AppDeps): Router {
   router.put('/:id', controller.update);
   router.post('/:id/cancel', controller.cancel);
   router.post('/:id/outcome', controller.outcome);
+  router.put('/:id/outcome', controller.editOutcome);
 
   return router;
 }

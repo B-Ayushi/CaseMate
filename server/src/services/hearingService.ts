@@ -1,15 +1,9 @@
 import type { HearingOutcome, Prisma, PrismaClient } from '@prisma/client';
 import { HttpError } from '../lib/httpError.js';
-import {
-  dateOnly,
-  formatIst,
-  istDateString,
-  istDateTimeToUtc,
-  istDayRange,
-  monthDays,
-} from '../lib/time.js';
-import type { HearingSlot, OutcomeBody } from '../validators/caseValidators.js';
+import { formatIst, istDateString, istDateTimeToUtc, istDayRange, monthDays } from '../lib/time.js';
+import type { EditOutcomeBody, HearingSlot, OutcomeBody } from '../validators/caseValidators.js';
 import { missingOutcomeNudgeAt, syncHearingReminders } from './reminderPlanner.js';
+import { syncHearingTimeEntry } from './timeEntryService.js';
 
 type Db = Prisma.TransactionClient;
 
@@ -22,6 +16,10 @@ export const outcomeLabels: Record<HearingOutcome, string> = {
   DISPOSED: 'Disposed',
   OTHER: 'Other',
 };
+
+// The "work done" line of the time entry a hearing outcome creates.
+const hearingWorkDescription = (outcome: HearingOutcome, purpose: string | null) =>
+  `Hearing: ${outcomeLabels[outcome]}${purpose ? ` (${purpose})` : ''}`;
 
 // The UTC instant of a hearing slot, which must be in the future.
 function futureInstant(slot: Pick<HearingSlot, 'date' | 'time'>, field: string, now: Date) {
@@ -153,26 +151,14 @@ export function logOutcome(prisma: PrismaClient, lawyerId: string, id: string, b
     });
     await syncHearingReminders(tx, id, now);
 
-    let timeEntry = null;
-    if (body.timeSpentMinutes && body.timeSpentMinutes > 0) {
-      const [lawyer, client] = await Promise.all([
-        tx.lawyer.findUniqueOrThrow({ where: { id: lawyerId } }),
-        tx.client.findUniqueOrThrow({ where: { id: hearing.case.clientId } }),
-      ]);
-      const ratePaise = client.hourlyRatePaise ?? lawyer.defaultHourlyRatePaise;
-      timeEntry = await tx.timeEntry.create({
-        data: {
-          lawyerId,
-          caseId: hearing.caseId,
-          hearingId: id,
-          workDate: dateOnly(istDateString(hearing.scheduledAt)),
-          minutes: body.timeSpentMinutes,
-          description: `Hearing: ${outcomeLabels[body.outcome]}${hearing.purpose ? ` (${hearing.purpose})` : ''}`,
-          ratePaise,
-          amountPaise: Math.round((body.timeSpentMinutes * ratePaise) / 60),
-        },
-      });
-    }
+    // Time spent becomes a billable entry at the client's (or default) rate.
+    const timeEntry = await syncHearingTimeEntry(
+      tx,
+      lawyerId,
+      hearing,
+      body.timeSpentMinutes ?? 0,
+      hearingWorkDescription(body.outcome, hearing.purpose),
+    );
 
     let nextHearing = null;
     if (body.nextHearing) {
@@ -194,6 +180,40 @@ export function logOutcome(prisma: PrismaClient, lawyerId: string, id: string, b
     }
 
     return { hearing: completed, nextHearing, timeEntry };
+  });
+}
+
+// Corrects a logged outcome: what happened, the notes and the time spent. Its time entry
+// follows the new minutes, unless that entry is already on an invoice; then the time
+// cannot change and the reason is returned (the other fields can still be corrected).
+export function editOutcome(
+  prisma: PrismaClient,
+  lawyerId: string,
+  id: string,
+  body: EditOutcomeBody,
+) {
+  return prisma.$transaction(async (tx) => {
+    const hearing = await findOwnedHearing(tx, lawyerId, id);
+    if (hearing.status !== 'COMPLETED') {
+      throw new HttpError(409, 'Only a hearing with a logged outcome can be edited.');
+    }
+    const timeEntry = await syncHearingTimeEntry(
+      tx,
+      lawyerId,
+      hearing,
+      body.timeSpentMinutes ?? 0,
+      hearingWorkDescription(body.outcome, hearing.purpose),
+    );
+    const updated = await tx.hearing.update({
+      where: { id },
+      data: {
+        outcome: body.outcome,
+        outcomeNotes: body.outcomeNotes,
+        timeSpentMinutes:
+          body.timeSpentMinutes && body.timeSpentMinutes > 0 ? body.timeSpentMinutes : null,
+      },
+    });
+    return { hearing: updated, timeEntry };
   });
 }
 

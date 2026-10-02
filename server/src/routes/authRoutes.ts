@@ -7,7 +7,7 @@ import { requireAuth } from '../middleware/requireAuth.js';
 export function authRoutes(deps: AppDeps): Router {
   const router = Router();
   const controller = authController(deps);
-  const limit = createAuthRateLimiters();
+  const limit = createAuthRateLimiters({ signupsPerHour: deps.config.signupsPerHour });
 
   router.post('/signup', limit.signup, controller.signup);
   router.post('/login', limit.login, controller.login);

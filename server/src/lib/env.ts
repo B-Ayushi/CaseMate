@@ -33,6 +33,7 @@ const envSchema = z.object({
   TWILIO_ACCOUNT_SID: optional,
   TWILIO_AUTH_TOKEN: optional,
   TWILIO_FROM_NUMBER: optional,
+  SIGNUP_LIMIT_PER_HOUR: z.coerce.number().int().positive().default(20),
   ENABLE_SCHEDULER: z
     .enum(['true', 'false'])
     .default('false')

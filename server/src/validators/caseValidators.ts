@@ -71,6 +71,24 @@ export const outcomeSchema = z
     error: 'A case with a next hearing cannot be closed',
   });
 
+// Correcting a logged outcome: what happened, the notes and the time spent. The next date
+// and closing the case are separate actions once the outcome is logged.
+export const editOutcomeSchema = z.object({
+  outcome: z.enum(['ADJOURNED', 'HEARD', 'ORDER_RESERVED', 'DISPOSED', 'OTHER'], {
+    error: 'Choose what happened',
+  }),
+  outcomeNotes: optionalText(5000, 'Notes'),
+  timeSpentMinutes: z
+    .number({ error: 'Enter the time spent in minutes' })
+    .int({ error: 'Enter whole minutes' })
+    .min(0, { error: 'Time spent cannot be negative' })
+    .max(24 * 60, { error: 'Time spent cannot be more than 24 hours' })
+    .nullish()
+    .transform((value) => value ?? null),
+});
+
+export type EditOutcomeBody = z.infer<typeof editOutcomeSchema>;
+
 export const hearingRangeQuerySchema = z
   .object({ from: isoDaySchema, to: isoDaySchema })
   .refine((v) => v.from <= v.to, { path: ['to'], error: 'The end date is before the start date' })

@@ -6,6 +6,8 @@ export interface AppConfig {
   nodeEnv: 'development' | 'test' | 'production';
   clientUrl: string;
   jwtSecret: string;
+  // Sign-ups allowed per network per hour (default 20).
+  signupsPerHour?: number;
 }
 
 // Everything the app needs from the outside world, passed in explicitly so the server

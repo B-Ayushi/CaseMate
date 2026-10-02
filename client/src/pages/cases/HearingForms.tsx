@@ -9,9 +9,11 @@ import {
   TextAreaField,
   TextField,
 } from '../../components/ui';
+import { useTimeEntries } from '../../features/billing/api';
 import {
   outcomeLabels,
   useAddHearing,
+  useEditOutcome,
   useLogOutcome,
   useUpdateHearing,
   type Hearing,
@@ -20,8 +22,10 @@ import {
 import { formatDateTime, todayIst, toDateInput, toTimeInput } from '../../lib/dates';
 import { applyServerErrors } from '../../lib/forms';
 import {
+  editOutcomeFormSchema,
   hearingSlotForm,
   outcomeFormSchema,
+  type EditOutcomeForm,
   type HearingSlotForm,
   type OutcomeForm,
 } from '../../lib/validation';
@@ -268,6 +272,113 @@ export function OutcomeFormCard({ hearing }: { hearing: Hearing }) {
       <Button type="submit" disabled={isSubmitting}>
         {isSubmitting ? 'Saving…' : 'Save outcome'}
       </Button>
+    </form>
+  );
+}
+
+// Corrects a logged outcome. The time spent follows into billing, unless that time is
+// already on an invoice: then the time fields are locked and the reason is shown.
+export function EditOutcomeForm({
+  hearing,
+  caseId,
+  onDone,
+}: {
+  hearing: Hearing;
+  caseId: string;
+  onDone: () => void;
+}) {
+  const editOutcome = useEditOutcome();
+  const entries = useTimeEntries({ caseId });
+  const invoiced = entries.data?.find((e) => e.hearingId === hearing.id)?.invoice ?? null;
+  const [formError, setFormError] = useState<string | null>(null);
+  const spent = hearing.timeSpentMinutes ?? 0;
+  const {
+    register,
+    handleSubmit,
+    setError,
+    formState: { errors, isSubmitting },
+  } = useForm<EditOutcomeForm>({
+    resolver: zodResolver(editOutcomeFormSchema),
+    defaultValues: {
+      outcome: hearing.outcome ?? 'HEARD',
+      outcomeNotes: hearing.outcomeNotes ?? '',
+      hours: spent ? String(Math.floor(spent / 60)) : '',
+      minutes: spent ? String(spent % 60) : '',
+    },
+  });
+
+  const onSubmit = handleSubmit(async (values) => {
+    setFormError(null);
+    const minutes = Number(values.hours || 0) * 60 + Number(values.minutes || 0);
+    try {
+      await editOutcome.mutateAsync({
+        id: hearing.id,
+        body: {
+          outcome: values.outcome,
+          outcomeNotes: values.outcomeNotes || null,
+          timeSpentMinutes: minutes > 0 ? minutes : null,
+        },
+      });
+      onDone();
+    } catch (error) {
+      setFormError(applyServerErrors(error, setError, { timeSpentMinutes: 'minutes' }));
+    }
+  });
+
+  const lockedReason = invoiced
+    ? invoiced.status === 'DRAFT'
+      ? `This time is on draft invoice ${invoiced.number}. Delete that draft to change it.`
+      : `This time is on invoice ${invoiced.number}, which has been ${invoiced.status === 'PAID' ? 'paid' : 'sent'}, so it can't be changed.`
+    : null;
+
+  return (
+    <form onSubmit={onSubmit} noValidate className="mt-3 space-y-4 border-t border-slate-200 pt-3">
+      {formError && <Alert>{formError}</Alert>}
+      <SelectField
+        label="What happened"
+        required
+        error={errors.outcome?.message}
+        {...register('outcome')}
+      >
+        {(Object.keys(outcomeLabels) as HearingOutcome[]).map((value) => (
+          <option key={value} value={value}>
+            {outcomeLabels[value]}
+          </option>
+        ))}
+      </SelectField>
+      <TextAreaField
+        label="Notes"
+        error={errors.outcomeNotes?.message}
+        {...register('outcomeNotes')}
+      />
+      <fieldset>
+        <legend className="text-sm font-medium text-slate-800">Time spent</legend>
+        {lockedReason && <p className="text-xs font-medium text-amber-800">{lockedReason}</p>}
+        <div className="mt-1 grid max-w-xs grid-cols-2 gap-3">
+          <TextField
+            label="Hours"
+            inputMode="numeric"
+            readOnly={!!lockedReason}
+            error={errors.hours?.message}
+            {...register('hours')}
+          />
+          <TextField
+            label="Minutes"
+            inputMode="numeric"
+            readOnly={!!lockedReason}
+            error={errors.minutes?.message}
+            {...register('minutes')}
+          />
+        </div>
+      </fieldset>
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit" disabled={isSubmitting}>
+          {isSubmitting ? 'Saving…' : 'Save outcome'}
+        </Button>
+        <Button variant="secondary" onClick={onDone}>
+          Cancel
+        </Button>
+      </div>
     </form>
   );
 }

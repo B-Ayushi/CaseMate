@@ -41,6 +41,16 @@ export default defineConfig({
         CLIENT_URL: `http://localhost:${CLIENT_PORT}`,
         NODE_ENV: 'test',
         ENABLE_SCHEDULER: 'false',
+        // The suite signs up a fresh account per test, all from this machine.
+        SIGNUP_LIMIT_PER_HOUR: '1000',
+        // Never deliver real email or SMS from automated tests, whatever server/.env
+        // contains: empty values count as "not configured", so sends fail cleanly.
+        SMTP_HOST: '',
+        SMTP_USER: '',
+        SMTP_PASS: '',
+        TWILIO_ACCOUNT_SID: '',
+        TWILIO_AUTH_TOKEN: '',
+        TWILIO_FROM_NUMBER: '',
       },
     },
     {

@@ -12,7 +12,12 @@ const app = createApp({
   prisma,
   mailer: email.mailer,
   sms,
-  config: { nodeEnv: env.NODE_ENV, clientUrl: env.CLIENT_URL, jwtSecret: env.JWT_SECRET },
+  config: {
+    nodeEnv: env.NODE_ENV,
+    clientUrl: env.CLIENT_URL,
+    jwtSecret: env.JWT_SECRET,
+    signupsPerHour: env.SIGNUP_LIMIT_PER_HOUR,
+  },
 });
 
 const server = app.listen(env.PORT, () => {

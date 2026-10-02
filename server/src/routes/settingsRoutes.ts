@@ -47,6 +47,8 @@ export function settingsRoutes(deps: AppDeps): Router {
   router.post('/password', passwordCheckLimit, controller.changePassword);
   router.get('/reminders', controller.getReminders);
   router.patch('/reminders', controller.updateReminders);
+  router.get('/billing', controller.getBilling);
+  router.patch('/billing', controller.updateBilling);
   router.post('/test-reminder', testReminderLimit, controller.testReminder);
   router.get('/export', controller.exportData);
   router.delete('/account', passwordCheckLimit, controller.deleteAccount);

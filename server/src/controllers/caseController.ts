@@ -6,6 +6,7 @@ import * as hearingService from '../services/hearingService.js';
 import {
   caseListQuerySchema,
   createCaseSchema,
+  editOutcomeSchema,
   hearingRangeQuerySchema,
   hearingSlotSchema,
   outcomeSchema,
@@ -83,5 +84,11 @@ export function hearingController({ prisma }: AppDeps) {
     res.json(await hearingService.logOutcome(prisma, currentLawyerId(req), id, body));
   };
 
-  return { list, missingOutcome, update, cancel, outcome };
+  const editOutcome: RequestHandler = async (req, res) => {
+    const { id } = parseParams(idParamSchema, req.params);
+    const body = editOutcomeSchema.parse(req.body);
+    res.json(await hearingService.editOutcome(prisma, currentLawyerId(req), id, body));
+  };
+
+  return { list, missingOutcome, update, cancel, outcome, editOutcome };
 }

@@ -60,6 +60,20 @@ export const requiredRupeesField = z
     error: 'Enter an amount in rupees, for example 2500 or 2,500.50',
   });
 
+// Hourly rates: the same ceiling as the server (₹5,00,000 an hour).
+export const MAX_HOURLY_RATE_PAISE = 50_000_000;
+const RATE_TOO_HIGH = 'Rate can be at most ₹5,00,000 an hour';
+
+export const optionalHourlyRateField = optionalRupeesField.refine(
+  (value) => value === '' || (rupeesToPaise(value) ?? 0) <= MAX_HOURLY_RATE_PAISE,
+  { error: RATE_TOO_HIGH },
+);
+
+export const hourlyRateField = requiredRupeesField.refine(
+  (value) => (rupeesToPaise(value) ?? 0) <= MAX_HOURLY_RATE_PAISE,
+  { error: RATE_TOO_HIGH },
+);
+
 export const signupSchema = z.object({
   name: requiredText(100, 'Enter your name'),
   email: emailField,
@@ -98,7 +112,7 @@ export const clientFormSchema = z
     address: optionalText(1000, 'Address'),
     preferredContact: z.enum(['PHONE', 'WHATSAPP', 'EMAIL']),
     languages: optionalText(191, 'Languages'),
-    hourlyRate: optionalRupeesField,
+    hourlyRate: optionalHourlyRateField,
   })
   .refine((v) => v.preferredContact !== 'EMAIL' || v.email !== '', {
     path: ['email'],
@@ -239,3 +253,61 @@ export type HearingSlotForm = z.infer<typeof hearingSlotForm>;
 export type NewCaseForm = z.infer<typeof newCaseFormSchema>;
 export type EditCaseForm = z.infer<typeof editCaseFormSchema>;
 export type OutcomeForm = z.infer<typeof outcomeFormSchema>;
+
+// Billing
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+// Hours and minutes typed separately; together at least 1 minute and at most 24 hours.
+export const timeEntryFormSchema = z
+  .object({
+    caseId: z.string().min(1, { error: 'Choose a case' }),
+    workDate: z.string().regex(ISO_DAY, { error: 'Enter a valid date' }),
+    hours: wholeNumber('Hours', 24),
+    minutes: wholeNumber('Minutes', 59),
+    description: requiredText(1000, 'Describe the work done'),
+  })
+  .superRefine((v, ctx) => {
+    const total = Number(v.hours || 0) * 60 + Number(v.minutes || 0);
+    if (total < 1) {
+      ctx.addIssue({ code: 'custom', path: ['minutes'], message: 'Enter the time spent' });
+    } else if (total > 24 * 60) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['hours'],
+        message: 'One entry can be at most 24 hours',
+      });
+    }
+  });
+
+export const timeTotalMinutes = (v: { hours: string; minutes: string }) =>
+  Number(v.hours || 0) * 60 + Number(v.minutes || 0);
+
+export const invoiceFormSchema = z
+  .object({
+    clientId: z.string().min(1, { error: 'Choose a client' }),
+    timeEntryIds: z.array(z.string()).min(1, { error: 'Choose at least one time entry' }),
+    issueDate: z.string().regex(ISO_DAY, { error: 'Enter a valid date' }),
+    dueDate: z.string().regex(ISO_DAY, { error: 'Enter a valid date' }),
+    notes: optionalText(2000, 'Notes'),
+  })
+  .refine((v) => v.dueDate >= v.issueDate, {
+    path: ['dueDate'],
+    error: 'The due date cannot be before the issue date',
+  });
+
+export const billingSettingsFormSchema = z.object({ defaultRate: hourlyRateField });
+
+export const editOutcomeFormSchema = z.object({
+  outcome: z.enum(['ADJOURNED', 'HEARD', 'ORDER_RESERVED', 'DISPOSED', 'OTHER'], {
+    error: 'Choose what happened',
+  }),
+  outcomeNotes: optionalText(5000, 'Notes'),
+  hours: wholeNumber('Hours', 24),
+  minutes: wholeNumber('Minutes', 59),
+});
+
+export type TimeEntryForm = z.infer<typeof timeEntryFormSchema>;
+export type InvoiceForm = z.infer<typeof invoiceFormSchema>;
+export type BillingSettingsForm = z.infer<typeof billingSettingsFormSchema>;
+export type EditOutcomeForm = z.infer<typeof editOutcomeFormSchema>;

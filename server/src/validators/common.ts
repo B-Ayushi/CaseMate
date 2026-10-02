@@ -40,6 +40,15 @@ export const paiseSchema = z
   .min(0, { error: 'Amount cannot be negative' })
   .max(2_000_000_000, { error: 'Amount is too large' });
 
+// An hourly rate in paise. The ceiling (₹5,00,000 an hour) keeps a full day's work at
+// that rate, and so every stored amount, inside a 32-bit column.
+export const MAX_HOURLY_RATE_PAISE = 50_000_000;
+export const hourlyRateSchema = z
+  .number({ error: 'Enter an hourly rate' })
+  .int({ error: 'Rate must be in whole paise' })
+  .min(0, { error: 'Rate cannot be negative' })
+  .max(MAX_HOURLY_RATE_PAISE, { error: 'Rate can be at most ₹5,00,000 an hour' });
+
 // "yyyy-MM-dd" calendar day (interpreted in IST).
 export const isoDaySchema = z.iso.date({ error: 'Enter a valid date' });
 

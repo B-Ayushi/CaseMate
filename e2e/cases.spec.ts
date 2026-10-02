@@ -132,8 +132,12 @@ test('log an outcome with time spent and the next date', async ({ page }) => {
   await expect(page.getByText('Adjourned')).toBeVisible();
   await expect(page.getByText('Prosecution sought time to file reply')).toBeVisible();
   await expect(page.getByText('Time spent: 1 h 30 min')).toBeVisible();
-  // 1.5 hours at the client's ₹3,000 an hour.
-  await expect(page.getByText('₹4,500')).toBeVisible();
+  // 1.5 hours at the client's ₹3,000 an hour, on the case's billing tab.
+  await page.getByRole('tab', { name: 'Time and billing' }).click();
+  const time = page.getByRole('tabpanel', { name: 'Time and billing' });
+  await expect(time.getByText('Hearing: Adjourned')).toBeVisible();
+  await expect(time.getByText(/1 h 30 min · ₹4,500/)).toBeVisible();
+  await expect(time.getByText('Unbilled', { exact: true })).toBeVisible();
 
   const entry = await db.timeEntry.findFirstOrThrow({ where: { caseId } });
   expect(entry.amountPaise).toBe(450000);

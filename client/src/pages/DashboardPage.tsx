@@ -14,6 +14,7 @@ import {
 import { useNow } from '../hooks/useNow';
 import { cx } from '../lib/cx';
 import { formatDateTime, formatIsoDay, formatIst, formatTime } from '../lib/dates';
+import { formatPaise } from '../lib/money';
 
 function greeting(now: number) {
   const hour = Number(formatIst(new Date(now), 'H'));
@@ -27,14 +28,16 @@ function StatCard({
   value,
   hint,
   tone = 'neutral',
+  attention = false,
 }: {
   label: string;
-  value: number;
-  hint: string;
+  value: ReactNode;
+  hint: ReactNode;
   tone?: 'neutral' | 'amber';
+  attention?: boolean;
 }) {
   const labelId = useId();
-  const alert = tone === 'amber' && value > 0;
+  const alert = tone === 'amber' && attention;
   return (
     <div
       role="group"
@@ -170,13 +173,14 @@ function FailedReminderItem({ reminder }: { reminder: FailedReminder }) {
 }
 
 function NeedsAttention({ data }: { data: Dashboard }) {
-  const { missingOutcome, failedReminders } = data.needsAttention;
-  if (missingOutcome.length === 0 && failedReminders.length === 0) {
+  const { missingOutcome, failedReminders, overdueInvoices } = data.needsAttention;
+  if (missingOutcome.length === 0 && failedReminders.length === 0 && overdueInvoices.length === 0) {
     return (
       <PanelEmpty>
         <p className="font-medium text-slate-900">All clear</p>
         <p className="mt-1">
-          Hearings that need a next date and reminders that could not be sent will show here.
+          Hearings that need a next date, reminders that could not be sent and overdue invoices will
+          show here.
         </p>
       </PanelEmpty>
     );
@@ -206,6 +210,29 @@ function NeedsAttention({ data }: { data: Dashboard }) {
       ))}
       {failedReminders.map((r) => (
         <FailedReminderItem key={r.id} reminder={r} />
+      ))}
+      {overdueInvoices.map((invoice) => (
+        <li key={invoice.id} className="flex flex-wrap items-start justify-between gap-3 py-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-slate-900">
+              <Badge tone="red">Invoice overdue</Badge> {invoice.number} ·{' '}
+              <TextLink to={`/clients/${invoice.client.id}`}>{invoice.client.name}</TextLink>
+            </p>
+            <p className="mt-1 text-sm text-slate-600">
+              {formatPaise(invoice.totalPaise)} was due on{' '}
+              {formatIsoDay(invoice.dueDate, 'd MMM yyyy')} (
+              {invoice.daysOverdue === 1 ? '1 day ago' : `${invoice.daysOverdue} days ago`}).
+            </p>
+          </div>
+          <ButtonLink
+            to={`/billing?invoice=${invoice.id}`}
+            variant="secondary"
+            className="px-3 py-1.5"
+            aria-label={`View invoice ${invoice.number}`}
+          >
+            View invoice
+          </ButtonLink>
+        </li>
       ))}
     </ul>
   );
@@ -287,7 +314,7 @@ export function DashboardPage() {
         </Alert>
       ) : (
         <>
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard
               label="Hearings today"
               value={dashboard.data.counts.today}
@@ -303,6 +330,22 @@ export function DashboardPage() {
               value={dashboard.data.counts.needNextDate}
               hint="Hearings with no outcome logged"
               tone="amber"
+              attention={dashboard.data.counts.needNextDate > 0}
+            />
+            <StatCard
+              label="Unpaid invoices"
+              value={formatPaise(dashboard.data.counts.unpaidPaise)}
+              hint={
+                <>
+                  {dashboard.data.counts.unpaidInvoices === 1
+                    ? '1 sent invoice not yet paid'
+                    : `${dashboard.data.counts.unpaidInvoices} sent invoices not yet paid`}
+                  {' · '}
+                  <TextLink to="/billing">Billing</TextLink>
+                </>
+              }
+              tone="amber"
+              attention={dashboard.data.needsAttention.overdueInvoices.length > 0}
             />
           </div>
 
