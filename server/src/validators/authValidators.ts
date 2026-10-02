@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { toIndianE164 } from '../lib/phone.js';
 
 // These rules are mirrored in the client forms.
 
@@ -9,17 +10,13 @@ export const emailSchema = z
   .max(191, { error: 'Email address is too long' })
   .pipe(z.email({ error: 'Enter a valid email address' }));
 
-// Indian mobile numbers: 10 digits starting 6-9, optionally written with +91, 91 or 0 in
-// front and with spaces or dashes. Stored as +91XXXXXXXXXX.
-const INDIAN_MOBILE = /^(?:\+91|91|0)?([6-9]\d{9})$/;
-
+// Stored as +91XXXXXXXXXX (see lib/phone.ts).
 export const indianMobileSchema = z
   .string({ error: 'Enter your mobile number' })
-  .transform((value) => value.replace(/[\s-]/g, ''))
-  .refine((value) => INDIAN_MOBILE.test(value), {
+  .refine((value) => toIndianE164(value) !== null, {
     error: 'Enter a valid Indian mobile number, for example 98765 43210',
   })
-  .transform((value) => `+91${INDIAN_MOBILE.exec(value)![1]}`);
+  .transform((value) => toIndianE164(value)!);
 
 // bcrypt only uses the first 72 bytes of a password, so longer ones are rejected rather
 // than silently truncated.

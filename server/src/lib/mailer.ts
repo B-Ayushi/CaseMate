@@ -60,3 +60,43 @@ export function createUnconfiguredMailer(): Mailer {
     },
   };
 }
+
+export function createMailerFromEnv(
+  env: {
+    SMTP_HOST?: string;
+    SMTP_PORT: number;
+    SMTP_USER?: string;
+    SMTP_PASS?: string;
+    EMAIL_FROM?: string;
+  },
+  options: { verify?: boolean } = {},
+): { mailer: Mailer; close: () => void } {
+  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, EMAIL_FROM } = env;
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS || !EMAIL_FROM) {
+    console.warn(
+      'Email is not configured (SMTP_HOST, SMTP_USER, SMTP_PASS, EMAIL_FROM in server/.env). ' +
+        'Password reset emails, reminders and invoices will fail to send until it is.',
+    );
+    return { mailer: createUnconfiguredMailer(), close: () => {} };
+  }
+
+  const smtp = createSmtpTransport({
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    user: SMTP_USER,
+    pass: SMTP_PASS,
+  });
+  if (options.verify) {
+    // Check the SMTP login at startup so a wrong password shows up now, not when a lawyer
+    // first needs an email.
+    smtp.verify().then(
+      () => console.log(`SMTP ready (${SMTP_HOST}:${SMTP_PORT})`),
+      (error: unknown) =>
+        console.error(
+          `SMTP check failed for ${SMTP_HOST}:${SMTP_PORT}. Emails will not send until this is fixed:`,
+          error instanceof Error ? error.message : error,
+        ),
+    );
+  }
+  return { mailer: createMailer(smtp, EMAIL_FROM), close: () => smtp.close() };
+}

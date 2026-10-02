@@ -18,7 +18,8 @@
     "typecheck": "npm run typecheck --workspaces && tsc -p tsconfig.e2e.json",
     "test": "npm run test --workspaces",
     "build": "npm run build --workspaces",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "reminders:tick": "npm run reminders:tick -w server"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

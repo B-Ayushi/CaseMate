@@ -1,13 +1,5 @@
 import type { MailMessage } from '../../lib/mailer.js';
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
+import { escapeHtml } from './layout.js';
 
 export function passwordResetEmail(params: {
   to: string;
