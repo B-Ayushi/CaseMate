@@ -5,7 +5,7 @@
   "type": "module",
   "description": "CaseMate: hearings, reminders, clients and billing for individual advocates in India",
   "engines": {
-    "node": "\u003e=20"
+    "node": ">=20"
   },
   "workspaces": [
     "client",
@@ -13,15 +13,19 @@
   ],
   "scripts": {
     "dev": "concurrently --kill-others-on-fail --names server,client --prefix-colors cyan,magenta \"npm run dev -w server\" \"npm run dev -w client\"",
-    "lint": "eslint . \u0026\u0026 prettier --check .",
+    "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
-    "typecheck": "npm run typecheck --workspaces",
+    "typecheck": "npm run typecheck --workspaces && tsc -p tsconfig.e2e.json",
     "test": "npm run test --workspaces",
-    "build": "npm run build --workspaces"
+    "build": "npm run build --workspaces",
+    "test:e2e": "playwright test"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^20.19.0",
     "concurrently": "^9.2.0",
+    "dotenv": "^17.2.0",
     "eslint": "^10.11.0",
     "eslint-config-prettier": "^10.1.0",
     "eslint-plugin-react-hooks": "^7.1.0",
@@ -30,8 +34,7 @@
     "prettier": "^3.6.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.0",
-    "vitest": "^4.1.11",
     "vite": "^7.1.0",
-    "@types/node": "^20.19.0"
+    "vitest": "^4.1.11"
   }
 }

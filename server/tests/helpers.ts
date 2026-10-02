@@ -1,4 +1,6 @@
+import type { Express } from 'express';
 import nodemailer from 'nodemailer';
+import request from 'supertest';
 import { createApp } from '../src/app.js';
 import type { AppConfig } from '../src/lib/config.js';
 import { createMailer, type MailMessage } from '../src/lib/mailer.js';
@@ -32,6 +34,29 @@ export function buildTestApp(overrides: Partial<AppConfig> = {}) {
     },
   });
   return { app, sentEmails };
+}
+
+let lawyerCounter = 0;
+
+// Signs up a lawyer through the real API and returns the session cookie to send back.
+export async function signUpLawyer(app: Express, overrides: Record<string, unknown> = {}) {
+  lawyerCounter += 1;
+  const res = await request(app)
+    .post('/api/auth/signup')
+    .send({
+      name: `Test Advocate ${lawyerCounter}`,
+      email: `advocate${lawyerCounter}-${Date.now()}@example.com`,
+      phone: '9876543210',
+      barCouncilNumber: `MAH/${lawyerCounter}/2015`,
+      password: 'testpass123',
+      ...overrides,
+    });
+  if (res.status !== 201) {
+    throw new Error(`Signup failed: ${res.status} ${JSON.stringify(res.body)}`);
+  }
+  const setCookie = ([] as string[]).concat(res.headers['set-cookie'] ?? []);
+  const cookie = setCookie.find((c) => c.startsWith('casemate_session='))!.split(';')[0]!;
+  return { cookie, lawyer: res.body.lawyer as { id: string; email: string } };
 }
 
 // Empties every table in the test database, children first.

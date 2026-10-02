@@ -4,7 +4,9 @@ import express, { type Express } from 'express';
 import helmet from 'helmet';
 import type { AppDeps } from './lib/config.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandlers.js';
+import { requireAuth } from './middleware/requireAuth.js';
 import { authRoutes } from './routes/authRoutes.js';
+import { clientRoutes } from './routes/clientRoutes.js';
 import { healthRoutes } from './routes/healthRoutes.js';
 
 export function createApp(deps: AppDeps): Express {
@@ -19,6 +21,10 @@ export function createApp(deps: AppDeps): Express {
 
   app.use('/api/health', healthRoutes(prisma));
   app.use('/api/auth', authRoutes(deps));
+
+  // Everything below works on a lawyer's own data and needs a logged-in lawyer.
+  const auth = requireAuth(config.jwtSecret);
+  app.use('/api/clients', auth, clientRoutes(deps));
 
   app.use('/api', notFoundHandler);
   app.use(errorHandler(config));

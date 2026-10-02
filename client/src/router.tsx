@@ -1,4 +1,45 @@
-import { createBrowserRouter } from 'react-router-dom';
-import { HealthPage } from './pages/HealthPage';
+import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { AppShell } from './components/AppShell';
+import { PublicOnly, RequireAuth } from './components/RouteGuards';
+import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage';
+import { LoginPage } from './pages/auth/LoginPage';
+import { ResetPasswordPage } from './pages/auth/ResetPasswordPage';
+import { SignupPage } from './pages/auth/SignupPage';
+import { EditClientPage, NewClientPage } from './pages/clients/ClientFormPage';
+import { ClientProfilePage } from './pages/clients/ClientProfilePage';
+import { ClientsPage } from './pages/clients/ClientsPage';
+import { NotFoundPage } from './pages/NotFoundPage';
 
-export const router = createBrowserRouter([{ path: '/', element: <HealthPage /> }]);
+export const router = createBrowserRouter([
+  {
+    element: <PublicOnly />,
+    children: [
+      { path: '/login', element: <LoginPage /> },
+      { path: '/signup', element: <SignupPage /> },
+      { path: '/forgot-password', element: <ForgotPasswordPage /> },
+    ],
+  },
+  // Reachable whether or not someone is logged in, since it is opened from an email.
+  { path: '/reset-password', element: <ResetPasswordPage /> },
+  {
+    element: <RequireAuth />,
+    children: [
+      {
+        element: <AppShell />,
+        children: [
+          { index: true, element: <Navigate to="/clients" replace /> },
+          {
+            path: 'clients',
+            element: <ClientsPage />,
+            children: [
+              { path: 'new', element: <NewClientPage /> },
+              { path: ':id', element: <ClientProfilePage /> },
+              { path: ':id/edit', element: <EditClientPage /> },
+            ],
+          },
+          { path: '*', element: <NotFoundPage /> },
+        ],
+      },
+    ],
+  },
+]);
