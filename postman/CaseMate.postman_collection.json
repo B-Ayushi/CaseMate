@@ -1,0 +1,3317 @@
+{
+  "info": {
+    "name": "CaseMate API",
+    "description": "Requests for the CaseMate API, with a test script on every request.\n\nRun the folders from **Health** to **Cleanup** in order (Collection Runner, or\n`npx newman run`). A run signs up a fresh test account, switches its email and SMS\nreminders off (so the scheduler never messages it), exercises every module, checks\nthe error responses, then deletes the account and a second account it creates, so\nnothing is left behind.\n\nThe session is an httpOnly cookie set by Sign up and Log in; Postman keeps it and\nsends it with every later request.\n\nDates are worked out before each request, in IST, relative to now (see the\ncollection pre-request script). The \"heard today\" hearing is at 11:59 PM IST, so\navoid running the collection in the last minute of the day.\n\n**Sends real messages (run manually)** is not part of the run order. Its requests\nsend real email or SMS; run them one at a time, after Invoices and before Cleanup.\nSee docs/api-reference.md for every endpoint.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// IST calendar days relative to now, \"yyyy-MM-dd\", for request bodies.",
+          "const IST = 330 * 60 * 1000;",
+          "const DAY = 24 * 60 * 60 * 1000;",
+          "const istDay = (days) => new Date(Date.now() + IST + days * DAY).toISOString().slice(0, 10);",
+          "pm.collectionVariables.set('istYesterday', istDay(-1));",
+          "pm.collectionVariables.set('istToday', istDay(0));",
+          "pm.collectionVariables.set('istTomorrow', istDay(1));",
+          "pm.collectionVariables.set('istIn2Days', istDay(2));",
+          "pm.collectionVariables.set('istIn7Days', istDay(7));",
+          "pm.collectionVariables.set('istIn14Days', istDay(14));",
+          "pm.collectionVariables.set('istIn15Days', istDay(15));",
+          "pm.collectionVariables.set('istIn30Days', istDay(30));",
+          "pm.collectionVariables.set('istIn40Days', istDay(40));",
+          "pm.collectionVariables.set('istMonth', istDay(0).slice(0, 7));"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "clientId",
+      "value": ""
+    },
+    {
+      "key": "client2Id",
+      "value": ""
+    },
+    {
+      "key": "noteId",
+      "value": ""
+    },
+    {
+      "key": "caseId",
+      "value": ""
+    },
+    {
+      "key": "hearingId",
+      "value": ""
+    },
+    {
+      "key": "extraHearingId",
+      "value": ""
+    },
+    {
+      "key": "todayCaseId",
+      "value": ""
+    },
+    {
+      "key": "todayHearingId",
+      "value": ""
+    },
+    {
+      "key": "nextHearingId",
+      "value": ""
+    },
+    {
+      "key": "hearingTimeEntryId",
+      "value": ""
+    },
+    {
+      "key": "timeEntryId",
+      "value": ""
+    },
+    {
+      "key": "tempEntryId",
+      "value": ""
+    },
+    {
+      "key": "draftEntryId",
+      "value": ""
+    },
+    {
+      "key": "invoiceId",
+      "value": ""
+    },
+    {
+      "key": "draftInvoiceId",
+      "value": ""
+    },
+    {
+      "key": "lawyerId",
+      "value": ""
+    },
+    {
+      "key": "email",
+      "value": ""
+    },
+    {
+      "key": "otherEmail",
+      "value": ""
+    },
+    {
+      "key": "currentPassword",
+      "value": ""
+    },
+    {
+      "key": "newPassword",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "description": "Is the API up, and can it reach MySQL? No login needed.",
+      "item": [
+        {
+          "name": "Health check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('API and database are ok', () => pm.expect(body).to.eql({ status: 'ok', database: 'ok' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "health"]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "description": "Sign up a fresh test account, then log out and back in.",
+      "item": [
+        {
+          "name": "Sign up a fresh test account",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A unique address for every run, from {{emailBase}} (plus-addressing).",
+                  "const base = pm.environment.get('emailBase') || 'postman.tester@example.com';",
+                  "const [local, domain] = base.split('@');",
+                  "const stamp = Date.now();",
+                  "pm.collectionVariables.set('email', local + '+casemate' + stamp + '@' + domain);",
+                  "pm.collectionVariables.set('otherEmail', local + '+other' + stamp + '@' + domain);",
+                  "// The password this run's test account has now ({{password}} until it is changed).",
+                  "pm.collectionVariables.set('currentPassword', pm.environment.get('password'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('returns the new lawyer, without secrets', () => {",
+                  "  pm.expect(body.lawyer.email).to.eql(pm.collectionVariables.get('email'));",
+                  "  pm.expect(body.lawyer.phone).to.match(/^\\+91\\d{10}$/);",
+                  "  pm.expect(body.lawyer).to.not.have.property('passwordHash');",
+                  "});",
+                  "pm.test('sets the session cookie', () => pm.expect(pm.response.headers.get('Set-Cookie') || '').to.include('casemate_session='));",
+                  "pm.collectionVariables.set('lawyerId', body.lawyer.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/signup",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "signup"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Adv. Postman Tester\",\n  \"email\": \"{{email}}\",\n  \"phone\": \"{{phone}}\",\n  \"barCouncilNumber\": \"MAH/0000/2026\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Who am I",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('the logged-in lawyer', () => pm.expect(body.lawyer.id).to.eql(pm.collectionVariables.get('lawyerId')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "me"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Log out",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('logged out', () => pm.expect(body.message).to.eql('You have been logged out.'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "logout"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Log in",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('returns the lawyer', () => pm.expect(body.lawyer.id).to.eql(pm.collectionVariables.get('lawyerId')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{currentPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Settings",
+      "description": "Reminders are switched off for the test account first, so the scheduler never sends it anything.",
+      "item": [
+        {
+          "name": "Turn off email and SMS reminders",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('both channels off', () => {",
+                  "  pm.expect(body.preferences.emailEnabled).to.eql(false);",
+                  "  pm.expect(body.preferences.smsEnabled).to.eql(false);",
+                  "});",
+                  "pm.test('no hearings yet', () => pm.expect(body.upcomingHearings).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/settings/reminders",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "settings", "reminders"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"emailEnabled\": false,\n  \"smsEnabled\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Get reminder preferences",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('defaults for the rest', () => pm.expect(body.preferences).to.include({ dayBeforeEnabled: true, dailySummaryTime: '07:00' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/settings/reminders",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "settings", "reminders"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Change daily summary time",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('saved', () => pm.expect(body.preferences.dailySummaryTime).to.eql('06:45'));",
+                  "pm.test('channels stay off', () => pm.expect(body.preferences.emailEnabled).to.eql(false));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/settings/reminders",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "settings", "reminders"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dailySummaryTime\": \"06:45\",\n  \"missingOutcomeNudgeEnabled\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Get profile",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('profile', () => pm.expect(body.profile.email).to.eql(pm.collectionVariables.get('email')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/settings/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "settings", "profile"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Update profile",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('saved, phone in +91 form', () => {",
+                  "  pm.expect(body.profile.barCouncilNumber).to.eql('MAH/0001/2026');",
+                  "  pm.expect(body.profile.phone).to.match(/^\\+91\\d{10}$/);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/settings/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "settings", "profile"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Adv. Postman Tester\",\n  \"phone\": \"{{phone}}\",\n  \"barCouncilNumber\": \"MAH/0001/2026\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Set default hourly rate",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('₹2,000 an hour', () => pm.expect(body.billing.defaultHourlyRatePaise).to.eql(200000));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/settings/billing",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "settings", "billing"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"defaultHourlyRatePaise\": 200000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Get billing settings",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('rate', () => pm.expect(body.billing).to.eql({ defaultHourlyRatePaise: 200000 }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/settings/billing",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "settings", "billing"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Change password",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('newPassword', pm.environment.get('password') + '-new1');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('changed', () => pm.expect(body.message).to.include('Your password has been changed'));",
+                  "pm.test('this session is renewed', () => pm.expect(pm.response.headers.get('Set-Cookie') || '').to.include('casemate_session='));",
+                  "// The rest of the run (and Cleanup) uses the new password.",
+                  "pm.collectionVariables.set('currentPassword', pm.collectionVariables.get('newPassword'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/settings/password",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "settings", "password"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"{{currentPassword}}\",\n  \"newPassword\": \"{{newPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Log in with the new password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('logged in', () => pm.expect(body.lawyer.id).to.eql(pm.collectionVariables.get('lawyerId')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{currentPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Download my data",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('a JSON file download', () => pm.expect(pm.response.headers.get('Content-Disposition')).to.match(/^attachment; filename=\"casemate-data-\\d{4}-\\d{2}-\\d{2}\\.json\"$/));",
+                  "const body = pm.response.json();",
+                  "pm.test('this account only, no secrets', () => {",
+                  "  pm.expect(body.profile.email).to.eql(pm.collectionVariables.get('email'));",
+                  "  pm.expect(pm.response.text()).to.not.include('passwordHash');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/settings/export",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "settings", "export"]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "Clients",
+      "description": "Add, list, search, read, update and delete clients, and their notes.",
+      "item": [
+        {
+          "name": "Add client",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('created', () => pm.expect(body.client).to.include({ name: 'Ramesh Gupta', phone: '+919822011223', hourlyRatePaise: 300000 }));",
+                  "pm.collectionVariables.set('clientId', body.client.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clients",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "clients"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Ramesh Gupta\",\n  \"phone\": \"98220 11223\",\n  \"email\": \"ramesh.gupta@example.com\",\n  \"address\": \"12, Shanti Nagar, Kothrud, Pune 411038\",\n  \"preferredContact\": \"WHATSAPP\",\n  \"languages\": \"Marathi, Hindi\",\n  \"hourlyRatePaise\": 300000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Add a second client",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('created with defaults', () => pm.expect(body.client).to.include({ preferredContact: 'PHONE', email: null, hourlyRatePaise: null }));",
+                  "pm.collectionVariables.set('client2Id', body.client.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clients",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "clients"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sunita Patil\",\n  \"phone\": \"9900112233\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List clients",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('both clients, by name', () => pm.expect(body.clients.map((c) => c.name)).to.eql(['Ramesh Gupta', 'Sunita Patil']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/clients",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "clients"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Search clients",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('one match', () => pm.expect(body.clients.map((c) => c.id)).to.eql([pm.collectionVariables.get('clientId')]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/clients?search=Gupta",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "clients"],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "Gupta"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Get client profile",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('profile with cases, notes and billing', () => {",
+                  "  pm.expect(body.client.id).to.eql(pm.collectionVariables.get('clientId'));",
+                  "  pm.expect(body.client.billing).to.eql({ billedPaise: 0, paidPaise: 0, duePaise: 0, overduePaise: 0, unbilledPaise: 0 });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/clients/{{clientId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "clients", "{{clientId}}"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Update client",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('updated', () => pm.expect(body.client).to.include({ preferredContact: 'PHONE', languages: 'Marathi' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clients/{{clientId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "clients", "{{clientId}}"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Ramesh Gupta\",\n  \"phone\": \"9822011223\",\n  \"email\": \"ramesh.gupta@example.com\",\n  \"address\": \"12, Shanti Nagar, Kothrud, Pune 411038\",\n  \"preferredContact\": \"PHONE\",\n  \"languages\": \"Marathi\",\n  \"hourlyRatePaise\": 300000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Add client note",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('note saved', () => pm.expect(body.note.clientId).to.eql(pm.collectionVariables.get('clientId')));",
+                  "pm.collectionVariables.set('noteId', body.note.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clients/{{clientId}}/notes",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "clients", "{{clientId}}", "notes"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Called about the sale agreement; will bring the original.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Delete client note",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('status is 204', () => pm.response.to.have.status(204));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/clients/{{clientId}}/notes/{{noteId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "clients", "{{clientId}}", "notes", "{{noteId}}"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Delete client (no cases)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('status is 204', () => pm.response.to.have.status(204));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/clients/{{client2Id}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "clients", "{{client2Id}}"]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "Cases",
+      "description": "Add a case with its first hearing, then list, read, update and add a hearing.",
+      "item": [
+        {
+          "name": "Add case with first hearing",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('created', () => pm.expect(body.case).to.include({ caseNumber: 'RCS/412/2026', status: 'ACTIVE' }));",
+                  "pm.collectionVariables.set('caseId', body.case.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/cases",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cases"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clientId\": \"{{clientId}}\",\n  \"title\": \"Gupta vs. Mehta Builders\",\n  \"caseNumber\": \"RCS/412/2026\",\n  \"caseType\": \"Civil suit\",\n  \"courtName\": \"Civil Court (Senior Division), Pune\",\n  \"courtroom\": \"Room 4\",\n  \"judge\": null,\n  \"opposingParty\": \"Mehta Builders Pvt. Ltd.\",\n  \"opposingCounsel\": null,\n  \"notes\": null,\n  \"emailReminderOverride\": null,\n  \"smsReminderOverride\": null,\n  \"dayBeforeReminderOverride\": null,\n  \"twoHourReminderOverride\": null,\n  \"firstHearing\": {\n    \"date\": \"{{istTomorrow}}\",\n    \"time\": \"10:30\",\n    \"purpose\": \"Evidence\",\n    \"notes\": \"Bring the original sale agreement\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List cases",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "const found = body.cases.find((c) => c.id === pm.collectionVariables.get('caseId'));",
+                  "pm.test('the case, with its next hearing', () => {",
+                  "  pm.expect(found).to.be.an('object');",
+                  "  pm.expect(found.nextHearing).to.be.an('object');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/cases?status=ACTIVE",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cases"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "ACTIVE"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Search cases",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('one match', () => pm.expect(body.cases.length).to.eql(1));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/cases?status=ALL&search=Mehta",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cases"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "ALL"
+                },
+                {
+                  "key": "search",
+                  "value": "Mehta"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Get case",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('case with hearings and time totals', () => {",
+                  "  pm.expect(body.case.hearings.length).to.eql(1);",
+                  "  pm.expect(body.case.time).to.eql({ totalMinutes: 0, totalPaise: 0, unbilledMinutes: 0, unbilledPaise: 0 });",
+                  "});",
+                  "pm.test('no reminders planned (channels are off)', () => pm.expect(body.case.hearings[0].reminders).to.eql([]));",
+                  "pm.collectionVariables.set('hearingId', body.case.hearings[0].id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/cases/{{caseId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cases", "{{caseId}}"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Update case",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('updated', () => pm.expect(body.case.judge).to.eql('Hon. A. R. Deshpande'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/cases/{{caseId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cases", "{{caseId}}"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clientId\": \"{{clientId}}\",\n  \"title\": \"Gupta vs. Mehta Builders\",\n  \"caseNumber\": \"RCS/412/2026\",\n  \"caseType\": \"Civil suit\",\n  \"courtName\": \"Civil Court (Senior Division), Pune\",\n  \"courtroom\": \"Room 4\",\n  \"judge\": \"Hon. A. R. Deshpande\",\n  \"opposingParty\": \"Mehta Builders Pvt. Ltd.\",\n  \"opposingCounsel\": null,\n  \"notes\": null,\n  \"emailReminderOverride\": null,\n  \"smsReminderOverride\": null,\n  \"dayBeforeReminderOverride\": null,\n  \"twoHourReminderOverride\": null,\n  \"status\": \"ACTIVE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Add hearing to case",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('scheduled', () => pm.expect(body.hearing.status).to.eql('SCHEDULED'));",
+                  "pm.collectionVariables.set('extraHearingId', body.hearing.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/cases/{{caseId}}/hearings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cases", "{{caseId}}", "hearings"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"date\": \"{{istIn14Days}}\",\n  \"time\": \"11:00\",\n  \"purpose\": \"Arguments\",\n  \"notes\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Hearings",
+      "description": "List hearings by IST date range, move one and cancel one.",
+      "item": [
+        {
+          "name": "List hearings in a date range",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('both hearings', () => pm.expect(body.hearings.map((h) => h.id)).to.include.members([pm.collectionVariables.get('hearingId'), pm.collectionVariables.get('extraHearingId')]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/hearings?from={{istToday}}&to={{istIn30Days}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "hearings"],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "{{istToday}}"
+                },
+                {
+                  "key": "to",
+                  "value": "{{istIn30Days}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Move hearing",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('moved', () => pm.expect(body.hearing.id).to.eql(pm.collectionVariables.get('hearingId')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/hearings/{{hearingId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "hearings", "{{hearingId}}"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"date\": \"{{istIn2Days}}\",\n  \"time\": \"10:30\",\n  \"purpose\": \"Evidence\",\n  \"notes\": \"Bring the original sale agreement\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Cancel hearing",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('cancelled', () => pm.expect(body.hearing.status).to.eql('CANCELLED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/hearings/{{extraHearingId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "hearings", "{{extraHearingId}}", "cancel"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Hearings missing an outcome",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('a list', () => pm.expect(body.hearings).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/hearings/missing-outcome",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "hearings", "missing-outcome"]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "Hearing log",
+      "description": "A hearing heard today (11:59 PM IST): log its outcome with time spent and the next date, then correct it.",
+      "item": [
+        {
+          "name": "Add case heard today",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('todayCaseId', body.case.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/cases",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cases"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clientId\": \"{{clientId}}\",\n  \"title\": \"State vs. Kulkarni\",\n  \"caseNumber\": \"BA/77/2026\",\n  \"caseType\": \"Bail application\",\n  \"courtName\": \"Sessions Court, Pune\",\n  \"courtroom\": \"Room 4\",\n  \"judge\": null,\n  \"opposingParty\": \"State of Maharashtra\",\n  \"opposingCounsel\": null,\n  \"notes\": null,\n  \"emailReminderOverride\": null,\n  \"smsReminderOverride\": null,\n  \"dayBeforeReminderOverride\": null,\n  \"twoHourReminderOverride\": null,\n  \"firstHearing\": {\n    \"date\": \"{{istToday}}\",\n    \"time\": \"23:59\",\n    \"purpose\": \"Bail hearing\",\n    \"notes\": null\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Get today's case",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('todayHearingId', body.case.hearings[0].id);",
+                  "pm.test('one scheduled hearing', () => pm.expect(body.case.hearings[0].status).to.eql('SCHEDULED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/cases/{{todayCaseId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cases", "{{todayCaseId}}"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Log outcome with time and next date",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('hearing completed', () => pm.expect(body.hearing).to.include({ status: 'COMPLETED', outcome: 'ADJOURNED', timeSpentMinutes: 90 }));",
+                  "pm.test('time billed at the client rate (₹3,000/h)', () => pm.expect(body.timeEntry).to.include({ minutes: 90, ratePaise: 300000, amountPaise: 450000 }));",
+                  "pm.test('next hearing scheduled', () => pm.expect(body.nextHearing.status).to.eql('SCHEDULED'));",
+                  "pm.collectionVariables.set('hearingTimeEntryId', body.timeEntry.id);",
+                  "pm.collectionVariables.set('nextHearingId', body.nextHearing.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/hearings/{{todayHearingId}}/outcome",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "hearings", "{{todayHearingId}}", "outcome"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"outcome\": \"ADJOURNED\",\n  \"outcomeNotes\": \"Prosecution sought time to file a reply.\",\n  \"timeSpentMinutes\": 90,\n  \"nextHearing\": {\n    \"date\": \"{{istIn7Days}}\",\n    \"time\": \"11:00\",\n    \"purpose\": \"Reply and arguments\",\n    \"notes\": null\n  },\n  \"closeCase\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Edit logged outcome",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('outcome corrected', () => pm.expect(body.hearing).to.include({ outcome: 'HEARD', timeSpentMinutes: 120 }));",
+                  "pm.test('time entry follows, same rate', () => pm.expect(body.timeEntry).to.include({ id: pm.collectionVariables.get('hearingTimeEntryId'), minutes: 120, amountPaise: 600000 }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/hearings/{{todayHearingId}}/outcome",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "hearings", "{{todayHearingId}}", "outcome"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"outcome\": \"HEARD\",\n  \"outcomeNotes\": \"Arguments heard in part.\",\n  \"timeSpentMinutes\": 120\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Dashboard and calendar",
+      "description": "Today's hearings, the next 7 days, needs attention, and a month of hearings.",
+      "item": [
+        {
+          "name": "Dashboard",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"today's hearing is listed\", () => pm.expect(body.todayHearings.map((h) => h.id)).to.include(pm.collectionVariables.get('todayHearingId')));",
+                  "pm.test('7 days ahead', () => pm.expect(body.next7Days.days.length).to.eql(7));",
+                  "pm.test('counts', () => pm.expect(body.counts).to.have.all.keys('today', 'next7Days', 'needNextDate', 'unpaidInvoices', 'unpaidPaise'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/dashboard",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "dashboard"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Calendar for this month",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('month and IST dates', () => {",
+                  "  pm.expect(body.month).to.eql(pm.collectionVariables.get('istMonth'));",
+                  "  const today = body.hearings.find((h) => h.id === pm.collectionVariables.get('todayHearingId'));",
+                  "  pm.expect(today).to.include({ date: pm.collectionVariables.get('istToday'), time: '23:59' });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/calendar?month={{istMonth}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "calendar"],
+              "query": [
+                {
+                  "key": "month",
+                  "value": "{{istMonth}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "Time entries",
+      "description": "Log, edit, list and delete time. Amounts are worked out by the server.",
+      "item": [
+        {
+          "name": "Rate for a case",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"the client's own rate\", () => pm.expect(body.rate).to.include({ ratePaise: 300000, source: 'client' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/time-entries/rate?caseId={{caseId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "time-entries", "rate"],
+              "query": [
+                {
+                  "key": "caseId",
+                  "value": "{{caseId}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Log time",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('amount = rate × minutes / 60', () => pm.expect(body.timeEntry).to.include({ ratePaise: 300000, amountPaise: 300000 }));",
+                  "pm.collectionVariables.set('timeEntryId', body.timeEntry.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/time-entries",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "time-entries"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"caseId\": \"{{caseId}}\",\n  \"workDate\": \"{{istToday}}\",\n  \"minutes\": 60,\n  \"description\": \"Drafting the written statement\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Edit time entry",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('amount recalculated', () => pm.expect(body.timeEntry).to.include({ minutes: 90, amountPaise: 450000 }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/time-entries/{{timeEntryId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "time-entries", "{{timeEntryId}}"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workDate\": \"{{istToday}}\",\n  \"minutes\": 90,\n  \"description\": \"Drafting the written statement\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List unbilled time for the client",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('both entries', () => pm.expect(body.timeEntries.map((e) => e.id)).to.include.members([pm.collectionVariables.get('timeEntryId'), pm.collectionVariables.get('hearingTimeEntryId')]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/time-entries?clientId={{clientId}}&billed=unbilled",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "time-entries"],
+              "query": [
+                {
+                  "key": "clientId",
+                  "value": "{{clientId}}"
+                },
+                {
+                  "key": "billed",
+                  "value": "unbilled"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Log time to delete",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('tempEntryId', body.timeEntry.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/time-entries",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "time-entries"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"caseId\": \"{{caseId}}\",\n  \"workDate\": \"{{istToday}}\",\n  \"minutes\": 15,\n  \"description\": \"Phone call\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Delete time entry",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('status is 204', () => pm.response.to.have.status(204));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/time-entries/{{tempEntryId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "time-entries", "{{tempEntryId}}"]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "Invoices",
+      "description": "Create an invoice from unbilled time, download its PDF, mark it sent and paid; delete a draft.",
+      "item": [
+        {
+          "name": "Create invoice",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('draft, totalled by the server', () => pm.expect(body.invoice).to.include({ status: 'DRAFT', totalPaise: 1050000, entryCount: 2 }));",
+                  "pm.test('numbered per lawyer', () => pm.expect(body.invoice.number).to.eql('INV-001'));",
+                  "pm.test('issued today, due in 15 days', () => {",
+                  "  pm.expect(body.invoice.issueDate).to.eql(pm.collectionVariables.get('istToday'));",
+                  "  pm.expect(body.invoice.dueDate).to.eql(pm.collectionVariables.get('istIn15Days'));",
+                  "});",
+                  "pm.collectionVariables.set('invoiceId', body.invoice.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "invoices"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clientId\": \"{{clientId}}\",\n  \"timeEntryIds\": [\n    \"{{timeEntryId}}\",\n    \"{{hearingTimeEntryId}}\"\n  ],\n  \"notes\": \"Payable by bank transfer within 15 days.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Get invoice",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('with its entries', () => pm.expect(body.invoice.entries.length).to.eql(2));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/{{invoiceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "invoices", "{{invoiceId}}"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Edit due date and notes",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('saved', () => pm.expect(body.invoice.dueDate).to.eql(pm.collectionVariables.get('istIn30Days')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/{{invoiceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "invoices", "{{invoiceId}}"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dueDate\": \"{{istIn30Days}}\",\n  \"notes\": \"Payable by bank transfer within 30 days.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Download invoice PDF",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('a PDF file', () => {",
+                  "  pm.expect(pm.response.headers.get('Content-Type')).to.eql('application/pdf');",
+                  "  pm.expect(pm.response.headers.get('Content-Disposition')).to.eql('attachment; filename=\"INV-001.pdf\"');",
+                  "  pm.expect(pm.response.stream.slice(0, 5).toString()).to.eql('%PDF-');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/{{invoiceId}}/pdf",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "invoices", "{{invoiceId}}", "pdf"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Mark as sent",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('sent', () => pm.expect(body.invoice).to.include({ status: 'SENT', displayStatus: 'SENT' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/{{invoiceId}}/mark-sent",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "invoices", "{{invoiceId}}", "mark-sent"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List invoices",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('the invoice', () => pm.expect(body.invoices.map((i) => i.number)).to.eql(['INV-001']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "invoices"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Mark paid",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('paid', () => pm.expect(body.invoice.status).to.eql('PAID'));",
+                  "pm.test('paid at is recorded', () => pm.expect(body.invoice.paidAt).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/{{invoiceId}}/mark-paid",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "invoices", "{{invoiceId}}", "mark-paid"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Billing summary for this month",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('billed and received ₹10,500', () => {",
+                  "  pm.expect(body.summary.billed).to.eql({ paise: 1050000, invoices: 1 });",
+                  "  pm.expect(body.summary.received).to.eql({ paise: 1050000, invoices: 1 });",
+                  "  pm.expect(body.summary.outstanding.paise).to.eql(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/billing/summary?month={{istMonth}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "billing", "summary"],
+              "query": [
+                {
+                  "key": "month",
+                  "value": "{{istMonth}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Log time for a draft",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('draftEntryId', body.timeEntry.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/time-entries",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "time-entries"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"caseId\": \"{{caseId}}\",\n  \"workDate\": \"{{istToday}}\",\n  \"minutes\": 30,\n  \"description\": \"Reviewing documents\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Create a draft invoice",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('next number', () => pm.expect(body.invoice.number).to.eql('INV-002'));",
+                  "pm.collectionVariables.set('draftInvoiceId', body.invoice.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "invoices"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clientId\": \"{{clientId}}\",\n  \"timeEntryIds\": [\n    \"{{draftEntryId}}\"\n  ],\n  \"issueDate\": \"{{istToday}}\",\n  \"dueDate\": \"{{istIn15Days}}\",\n  \"notes\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Delete draft invoice",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('status is 204', () => pm.response.to.have.status(204));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/{{draftInvoiceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "invoices", "{{draftInvoiceId}}"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Deleted draft frees its time",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('back on the unbilled list', () => pm.expect(body.timeEntries.map((e) => e.id)).to.include(pm.collectionVariables.get('draftEntryId')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/time-entries?billed=unbilled",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "time-entries"],
+              "query": [
+                {
+                  "key": "billed",
+                  "value": "unbilled"
+                }
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "Error cases",
+      "description": "What the API returns for bad requests. Each expects an error status.",
+      "item": [
+        {
+          "name": "Log out",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('status is 200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "logout"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "No login: 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 401', () => pm.response.to.have.status(401));",
+                  "pm.test('error message', () => pm.expect(pm.response.json().error).to.eql(\"Please log in to continue.\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/cases",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cases"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Wrong password: 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 401', () => pm.response.to.have.status(401));",
+                  "pm.test('error message', () => pm.expect(pm.response.json().error).to.eql(\"Email or password is incorrect.\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"not-the-password-1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Log in again",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('status is 200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{currentPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Invalid body: 400 with field errors",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "const body = pm.response.json();",
+                  "pm.test('message', () => pm.expect(body.error).to.eql('Please check the highlighted fields.'));",
+                  "pm.test('one message per field', () => pm.expect(body.fields).to.include({",
+                  "  name: \"Enter the client's name\",",
+                  "  phone: 'Enter a valid Indian mobile number, for example 98765 43210',",
+                  "  email: 'Enter a valid email address',",
+                  "}));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clients",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "clients"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"\",\n  \"phone\": \"12345\",\n  \"email\": \"not-an-email\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Hearing date in the past: 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "const body = pm.response.json();",
+                  "pm.test('message', () => pm.expect(body.error).to.eql('The hearing date and time must be in the future.'));",
+                  "pm.test('on the date field', () => pm.expect(body.fields['firstHearing.date']).to.eql('Choose a date and time in the future'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/cases",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cases"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clientId\": \"{{clientId}}\",\n  \"title\": \"Gupta vs. Mehta Builders\",\n  \"caseNumber\": \"RCS/999/2026\",\n  \"caseType\": \"Civil suit\",\n  \"courtName\": \"Civil Court (Senior Division), Pune\",\n  \"courtroom\": \"Room 4\",\n  \"judge\": null,\n  \"opposingParty\": \"Mehta Builders Pvt. Ltd.\",\n  \"opposingCounsel\": null,\n  \"notes\": null,\n  \"emailReminderOverride\": null,\n  \"smsReminderOverride\": null,\n  \"dayBeforeReminderOverride\": null,\n  \"twoHourReminderOverride\": null,\n  \"firstHearing\": {\n    \"date\": \"{{istYesterday}}\",\n    \"time\": \"10:30\",\n    \"purpose\": null,\n    \"notes\": null\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Duplicate case number: 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('error message', () => pm.expect(pm.response.json().error).to.eql(\"You already have a case with this number.\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/cases",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cases"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clientId\": \"{{clientId}}\",\n  \"title\": \"Gupta vs. Mehta Builders\",\n  \"caseNumber\": \"RCS/412/2026\",\n  \"caseType\": \"Civil suit\",\n  \"courtName\": \"Civil Court (Senior Division), Pune\",\n  \"courtroom\": \"Room 4\",\n  \"judge\": null,\n  \"opposingParty\": \"Mehta Builders Pvt. Ltd.\",\n  \"opposingCounsel\": null,\n  \"notes\": null,\n  \"emailReminderOverride\": null,\n  \"smsReminderOverride\": null,\n  \"dayBeforeReminderOverride\": null,\n  \"twoHourReminderOverride\": null,\n  \"firstHearing\": {\n    \"date\": \"{{istIn40Days}}\",\n    \"time\": \"10:30\",\n    \"purpose\": null,\n    \"notes\": null\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Delete a client who has cases: 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "const body = pm.response.json();",
+                  "pm.test('explains why', () => pm.expect(body.error).to.include('so they cannot be deleted'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/clients/{{clientId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "clients", "{{clientId}}"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Delete a case with time: 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('error message', () => pm.expect(pm.response.json().error).to.eql(\"This case has time entries, so it cannot be deleted. Close it instead to keep your billing history.\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/cases/{{caseId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cases", "{{caseId}}"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Delete an invoiced time entry: 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('error message', () => pm.expect(pm.response.json().error).to.eql(\"This time is on invoice INV-001, which has been paid, so it can't be changed.\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/time-entries/{{timeEntryId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "time-entries", "{{timeEntryId}}"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Change invoiced hearing time: 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "const body = pm.response.json();",
+                  "pm.test('reason on the time field', () => pm.expect(body.fields.timeSpentMinutes).to.include('INV-001'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/hearings/{{todayHearingId}}/outcome",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "hearings", "{{todayHearingId}}", "outcome"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"outcome\": \"HEARD\",\n  \"outcomeNotes\": null,\n  \"timeSpentMinutes\": 45\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Delete a paid invoice: 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('error message', () => pm.expect(pm.response.json().error).to.eql(\"Invoice INV-001 has been paid, so it can't be deleted.\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/{{invoiceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "invoices", "{{invoiceId}}"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Log outcome twice: 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('error message', () => pm.expect(pm.response.json().error).to.eql(\"The outcome of this hearing has already been recorded.\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/hearings/{{todayHearingId}}/outcome",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "hearings", "{{todayHearingId}}", "outcome"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"outcome\": \"HEARD\",\n  \"closeCase\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Wrong current password: 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "const body = pm.response.json();",
+                  "pm.test('on the field', () => pm.expect(body.fields).to.eql({ currentPassword: 'This is not your current password' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/settings/password",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "settings", "password"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"not-the-password-1\",\n  \"newPassword\": \"another-pass-2\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Invalid month: 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "const body = pm.response.json();",
+                  "pm.test('on the month', () => pm.expect(body.fields.month).to.include('YYYY-MM'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/calendar?month=2026-13",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "calendar"],
+              "query": [
+                {
+                  "key": "month",
+                  "value": "2026-13"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Malformed id: 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('error message', () => pm.expect(pm.response.json().error).to.eql(\"Not found.\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/cases/not-an-id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cases", "not-an-id"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Retry a reminder that does not exist: 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('error message', () => pm.expect(pm.response.json().error).to.eql(\"Reminder not found.\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/reminders/cm0000000000000000000000/retry",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reminders", "cm0000000000000000000000", "retry"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Unknown route: 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('error message', () => pm.expect(pm.response.json().error).to.eql(\"Not found\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/nothing-here",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "nothing-here"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Sign up a second lawyer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('now logged in as the second lawyer', () => pm.expect(pm.response.json().lawyer.email).to.eql(pm.collectionVariables.get('otherEmail')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/signup",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "signup"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Adv. Other Lawyer\",\n  \"email\": \"{{otherEmail}}\",\n  \"phone\": \"{{phone}}\",\n  \"barCouncilNumber\": \"MAH/0002/2026\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Another lawyer's case: 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('error message', () => pm.expect(pm.response.json().error).to.eql(\"Case not found.\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/cases/{{caseId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cases", "{{caseId}}"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Another lawyer's client: 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('error message', () => pm.expect(pm.response.json().error).to.eql(\"Client not found.\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clients/{{clientId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "clients", "{{clientId}}"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Taken over\",\n  \"phone\": \"9822011223\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Another lawyer's invoice PDF: 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('error message', () => pm.expect(pm.response.json().error).to.eql(\"Invoice not found.\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/{{invoiceId}}/pdf",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "invoices", "{{invoiceId}}", "pdf"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Another lawyer's time entry: 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('error message', () => pm.expect(pm.response.json().error).to.eql(\"Time entry not found.\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/time-entries/{{draftEntryId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "time-entries", "{{draftEntryId}}"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "The second lawyer sees none of it",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('empty', () => pm.expect(pm.response.json().invoices).to.eql([]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "invoices"]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "Cleanup",
+      "description": "Delete both test accounts and all their data, so a run leaves nothing behind.",
+      "item": [
+        {
+          "name": "Delete the second lawyer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('deleted', () => pm.expect(pm.response.json().message).to.eql('Your account and all its data have been deleted.'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/settings/account",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "settings", "account"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{otherEmail}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Log in as the test account",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('status is 200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{currentPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Delete the test account",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('deleted', () => pm.expect(pm.response.json().message).to.eql('Your account and all its data have been deleted.'));",
+                  "pm.test('logged out', () => pm.expect(pm.response.headers.get('Set-Cookie') || '').to.include('casemate_session=;'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/settings/account",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "settings", "account"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{currentPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "The account is gone",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 401', () => pm.response.to.have.status(401));",
+                  "pm.test('error message', () => pm.expect(pm.response.json().error).to.eql(\"Email or password is incorrect.\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{currentPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Sends real messages (run manually)",
+      "description": "Not part of the run order: each request here sends a real email or SMS through the\nserver's SMTP and Twilio settings. Run them one at a time, while logged in, after the\nInvoices folder and before Cleanup.\n\n- Test reminder: one email to the account address and one SMS to {{phone}}. Set\n  `emailBase` and `phone` in the environment to your own before signing up.\n- Send invoice: emails the invoice PDF to the client (ramesh.gupta@example.com in\n  this collection; change the client email to one you own first).\n- Forgot password: emails a reset link if the address has an account.",
+      "item": [
+        {
+          "name": "Send me a test reminder (real email + SMS)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('a result for each channel', () => {",
+                  "  pm.expect(body.email.status).to.be.oneOf(['sent', 'failed']);",
+                  "  pm.expect(body.sms.status).to.be.oneOf(['sent', 'failed']);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/settings/test-reminder",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "settings", "test-reminder"]
+            },
+            "description": "Sends one real email and one real SMS. Limited to 5 an hour per account.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Send invoice by email (real email)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('sent', () => pm.expect(pm.response.json().invoice.status).to.eql('SENT'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/{{invoiceId}}/send",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "invoices", "{{invoiceId}}", "send"]
+            },
+            "description": "Emails the PDF to the client. Fails with 409 for a paid invoice, 502 if the email cannot be sent.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Forgot password (real email)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('same answer for any address', () => pm.expect(pm.response.json().message).to.eql('If an account exists for that email, we have sent a link to reset the password.'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/forgot-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "forgot-password"]
+            },
+            "description": "Always answers the same way; emails a reset link only if the account exists.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

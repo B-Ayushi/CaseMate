@@ -259,6 +259,41 @@ npm run test:e2e                # end-to-end tests
   drive them in Chrome, including a phone-sized layout. Email and SMS are switched off
   for these runs, so no real message is ever sent.
 
+## API testing with Postman
+
+Every endpoint is described in [docs/api-reference.md](docs/api-reference.md). The
+`postman` folder has a ready-made collection with a test script on every request:
+
+- [postman/CaseMate.postman_collection.json](postman/CaseMate.postman_collection.json)
+- [postman/CaseMate.local.postman_environment.json](postman/CaseMate.local.postman_environment.json)
+  (`baseUrl` = `http://localhost:4000`, plus placeholder test credentials)
+
+A run signs up a fresh test account and switches its email and SMS reminders off, so
+the scheduler never messages it. It then works through every module and checks the
+error responses. Finally, it deletes that account and a second one it creates, so it
+leaves no data behind. Dates are worked out at run time in IST.
+
+**In Postman**
+
+1. Start the app (`npm run dev`).
+2. In Postman, choose **Import** and select both files from the `postman` folder.
+3. Pick the **CaseMate local** environment in the top-right corner.
+4. Open the collection's **Run** view. Untick the folder **Sends real messages (run
+   manually)**, then run the rest in order, from Health to Cleanup.
+
+**From the command line** (with the app running):
+
+```powershell
+npx newman run postman/CaseMate.postman_collection.json -e postman/CaseMate.local.postman_environment.json --folder Health --folder Auth --folder Settings --folder Clients --folder Cases --folder Hearings --folder "Hearing log" --folder "Dashboard and calendar" --folder "Time entries" --folder Invoices --folder "Error cases" --folder Cleanup
+```
+
+The folder **Sends real messages (run manually)** holds the three requests that send real
+email or SMS: test reminder, send invoice and forgot password. Run them one at a time,
+after Invoices and before Cleanup. Set `emailBase` and `phone` in the environment to
+your own first. The run's email address is made from `emailBase` with a `+casemate…` tag,
+so a Gmail address still delivers. Avoid running the collection in the last minute of
+an IST day: one hearing is scheduled for 11:59 PM today.
+
 ## Known limitations
 
 - **SMS to Indian numbers.** Twilio trial accounts can only send predefined templates to
